@@ -1,0 +1,126 @@
+metal-inspect-system/
+├── backend/           
+├── frontend/         # HTML/CSS/JS интерфейс
+│   ├── pages/       # HTML страницы
+│   │   ├── auth.html
+│   │   ├── dashboard.html
+│   │   ├── journal.html
+│   │   ├── ai_panel.html
+│   │   ├── account.html
+│   │   ├── statistic.html
+│   │   └── settings.html     
+│   ├── assets/      # CSS и JS файлы
+│   │   ├── css/
+│   │   │   ├── auth.css
+│   │   │   ├── dashboard.css
+│   │   │   ├── journal.css
+│   │   │   ├── ai_panel.css
+│   │   │   ├── account.css
+│   │   │   ├── statistic.css
+│   │   │   └── settings.css  
+│   │   └── js/
+│   │       ├── auth.js
+│   │       ├── dashboard.js
+│   │       ├── journal.js
+│   │       ├── ai_panel.js
+│   │       ├── account.js
+│   │       ├── statistic.js
+│   │       └── settings.js   
+│   ├── index.html      
+│   └── icons/       
+├── docker-compose.yml       # для базы данных postgres
+└── README.md
+
+
+metal-inspect-system/
+├── .venv
+├── backend/           # FastAPI сервер, еще ничего не сделано
+├── docker-compose.yml
+├── metal-inspect-system-frontend/
+│   ├── node_modules/
+│   ├── public/
+│   │   ├── index.html
+│   │   └── favicon.ico
+│   ├── src/
+
+
+
+Metal_Inspect_0/
+├── .venv/                     # Единое Python-окружение для backend (FastAPI)
+├── backend/                   # Backend на FastAPI
+│   ├── alembic/     
+│   │   ├── __pycache__/   
+│   │   ├── versions/
+│   │   ├── env.py  
+│   │   ├── README
+│   │   ├── script.py.mako                
+│   ├── app/
+│   │   ├── __pycache__/   
+│   │   ├── api/              
+│   │   │   ├── __pycache__/  
+│   │   │   ├── auth.py  
+│   │   │   ├── dashboard.py  
+│   │   │   └── journal.py           
+│   │   ├── core/ 
+│   │   │   ├── __pycache__/               
+│   │   │   ├── config.py     
+│   │   │   ├── security.py     
+│   │   │   └── database.py   
+│   │   ├── models/     
+│   │   │   ├── __pycache__/    
+│   │   │   ├── __init__.py  
+│   │   │   ├── defect.py  
+│   │   │   ├── image.py  
+│   │   │   ├── inspection.py         
+│   │   │   ├── role.py      
+│   │   │   └── user.py             
+│   │   ├── schemas/                 
+│   │   │   └── auth.py         
+│   │   ├── services/                 
+│   │   │   └── ai_service.py   
+│   │   └── main.py       
+│   ├── alembic.ini  
+│   └── requirements.txt    
+├── metal-inspect-system-frontend/
+│   ├── node_modules/
+│   ├── public/
+│   │   ├── index.html
+│   │   ├── logo192.png
+│   │   ├── logo512.png
+│   │   ├── manifest.json
+│   │   ├── robots.txt
+│   │   └── favicon.ico
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Auth.js
+│   │   │   ├── DashboardPage.js
+│   │   │   ├── JournalPage.js
+│   │   │   ├── AiPanelPage.js
+│   │   │   ├── AccountPage.js
+│   │   │   ├── StatisticPage.js
+│   │   │   └──SettingsPage.js
+│   │   ├── styles/
+│   │   │   ├── auth.css
+│   │   │   ├── dashboard.css
+│   │   │   ├── journal.css
+│   │   │   ├── ai_panel.css
+│   │   │   ├── account.css
+│   │   │   ├── statistic.css
+│   │   │   └──settings.css
+│   │   ├── services/
+│   │   │   └──Api.js
+│   │   ├── context/
+│   │   │   └──AuthContext.js
+│   │   ├── App.css
+│   │   ├── App.js
+│   │   ├── App.test.js
+│   │   ├── index.css
+│   │   ├── index.js
+│   │   ├── logo.svg
+│   │   ├── reportWebVitals.js
+│   │   └──setupTests.js
+│   │   
+│   ├── package.json
+│   └── package-lock.json
+├── docker-compose.yml       # для базы данных postgres
+└── .gitignore

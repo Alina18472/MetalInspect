@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Inspect - Авторизация</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/auth.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="header">
+            <div class="logo">
+                <h1>Metal Inspect</h1>
+            </div>
+        </div>
+        
+        <div class="form-container">
+            <form id="loginForm">
+                <div class="input-group">
+                    <label for="username"><i class="fas fa-user"></i> Логин</label>
+                    <div class="input-icon">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <input type="text" id="username" name="username" placeholder="Введите ваш логин" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="password"><i class="fas fa-lock"></i> Пароль</label>
+                    <div class="input-icon">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <input type="password" id="password" name="password" placeholder="Введите ваш пароль" required>
+                    <div class="password-toggle" id="togglePassword">
+                        <i class="fas fa-eye"></i>
+                    </div>
+                </div>
+                
+                <button type="submit" class="login-btn">
+                     Войти в систему
+                </button>
+            </form>
+        </div>
+        
+        <div class="footer">
+            <p style="margin-top: 15px;">Для доступа к системе требуется авторизация.<br>Обратитесь к администратору для получения учетных данных.</p>
+            <p style="margin-top: 10px; font-size: 0.8rem;">© 2026 Metal Inspect.</p>
+        </div>
+    </div>
+
+    <script src="../assets/js/auth2.js"></script>
+</body>
+</html>

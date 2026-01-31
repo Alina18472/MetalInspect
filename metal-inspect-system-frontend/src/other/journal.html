@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Inspect - Журнал событий и отчетность</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/journal.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Шапка -->
+        <div class="header">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <i class="fas fa-industry"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>Metal Inspect</h1>
+                    <div class="subtitle">Система распознавания трещин в слитках • Журнал событий и отчетность</div>
+                </div>
+            </div>
+            
+            <div class="nav-buttons">
+                <a href="#" class="nav-btn">
+                    <i class="fas fa-tachometer-alt"></i> Главный экран
+                </a>
+                <a href="#" class="nav-btn active">
+                    <i class="fas fa-history"></i> Журнал событий
+                </a>
+                <a href="#" class="nav-btn">
+                    <i class="fas fa-sliders-h"></i> Настройки
+                </a>
+            </div>
+            
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div>
+                    <div class="user-name">Оператор Иванов А.С.</div>
+                    <div class="user-role">Смена #3 • 08:00-20:00</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Основное содержимое -->
+        <div class="main-content">
+            <!-- Левая панель - фильтры и отчеты -->
+            <div class="sidebar">
+                <!-- Панель фильтров -->
+                <div class="filters-panel">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-filter"></i> Фильтрация событий</h2>
+                    </div>
+                    
+                    <div class="filters-content">
+                        <div class="filter-group">
+                            <label for="dateRange"><i class="far fa-calendar-alt"></i> Диапазон дат</label>
+                            <input type="text" id="dateRange" class="filter-input" placeholder="Выберите период" value="01.06.2023 - 30.06.2023">
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="defectType"><i class="fas fa-exclamation-triangle"></i> Тип дефекта</label>
+                            <select id="defectType" class="filter-select">
+                                <option value="">Все типы</option>
+                                <option value="crack">Трещина</option>
+                                <option value="porosity">Пористость</option>
+                                <option value="inclusion">Включения</option>
+                                <option value="scratch">Царапина</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="status"><i class="fas fa-check-circle"></i> Финальный статус</label>
+                            <select id="status" class="filter-select">
+                                <option value="">Все статусы</option>
+                                <option value="confirmed">Подтверждено</option>
+                                <option value="rejected">Отклонено</option>
+                                <option value="pending">Ожидает проверки</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="operator"><i class="fas fa-user"></i> Исполнитель</label>
+                            <select id="operator" class="filter-select">
+                                <option value="">Все операторы</option>
+                                <option value="op1">Иванов А.С.</option>
+                                <option value="op2">Петров В.И.</option>
+                                <option value="op3">Сидорова Е.П.</option>
+                                <option value="ai">Автоматически (ИИ)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="confidence"><i class="fas fa-chart-line"></i> Уверенность ИИ</label>
+                            <select id="confidence" class="filter-select">
+                                <option value="">Любая уверенность</option>
+                                <option value="high">Высокая (>90%)</option>
+                                <option value="medium">Средняя (75-90%)</option>
+                                <option value="low">Низкая (<75%)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-buttons">
+                            <button class="filter-btn primary" id="applyFilters">
+                                <i class="fas fa-search"></i> Применить фильтры
+                            </button>
+                            <button class="filter-btn secondary" id="resetFilters">
+                                <i class="fas fa-redo"></i> Сбросить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Панель отчетов -->
+                <div class="reports-panel">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-chart-pie"></i> Генерация отчетов</h2>
+                    </div>
+                    
+                    <div class="reports-content">
+                        <div class="report-option" id="defectReport">
+                            <h3><i class="fas fa-exclamation-circle"></i> Отчет по браку</h3>
+                            <p>Сводный отчет о выявленных дефектах с анализом по типам, сменам и причинам возникновения.</p>
+                        </div>
+                        
+                        <div class="report-option" id="trendReport">
+                            <h3><i class="fas fa-chart-line"></i> Динамика дефектов</h3>
+                            <p>График изменения количества дефектов по сменам за выбранный период времени.</p>
+                        </div>
+                        
+                        <div class="report-option" id="operatorReport">
+                            <h3><i class="fas fa-users"></i> Отчет по операторам</h3>
+                            <p>Статистика работы операторов: количество проверенных слитков, точность подтверждения дефектов.</p>
+                        </div>
+                        
+                        <div class="report-option" id="systemReport">
+                            <h3><i class="fas fa-robot"></i> Эффективность ИИ</h3>
+                            <p>Анализ работы нейросети: точность обнаружения, ложные срабатывания, достоверность прогнозов.</p>
+                        </div>
+                        
+                        <button class="generate-btn" id="generateReport">
+                            <i class="fas fa-file-export"></i> Сформировать отчет
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Правая панель - журнал событий -->
+            <div class="journal-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-history"></i> Журнал событий контроля</h2>
+                    <div class="controls">
+                        <div class="record-count" id="recordCount">Загружено 1247 записей</div>
+                        <button class="filter-btn secondary" id="exportData">
+                            <i class="fas fa-file-export"></i> Экспорт
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="journal-content">
+                    <div class="journal-table-container">
+                        <table class="journal-table" id="eventsTable">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>ID слитка</th>
+                                    <th>Результат ИИ</th>
+                                    <th>Статус</th>
+                                    <th>Оператор</th>
+                                    <th>Комментарий</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="eventsTableBody">
+                                <!-- Данные будут добавлены скриптом -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="pagination">
+                        <div class="pagination-info">
+                            Показаны записи 1-20 из 1247
+                        </div>
+                        <div class="pagination-controls">
+                            <div class="page-btn" id="prevPage">
+                                <i class="fas fa-chevron-left"></i>
+                            </div>
+                            <div class="page-btn active">1</div>
+                            <div class="page-btn">2</div>
+                            <div class="page-btn">3</div>
+                            <div class="page-btn">4</div>
+                            <div class="page-btn">5</div>
+                            <div class="page-btn" id="nextPage">
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно с отчетом -->
+    <div class="modal-overlay" id="reportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-chart-pie"></i> Отчет по браку за период</h3>
+                <button class="close-modal" id="closeReportModal">&times;</button>
+            </div>
+            <div class="modal-body" id="reportModalBody">
+                <!-- Содержимое отчета будет добавлено скриптом -->
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn secondary" id="printReport">
+                    <i class="fas fa-print"></i> Печать
+                </button>
+                <button class="modal-btn secondary" id="exportReport">
+                    <i class="fas fa-file-excel"></i> Экспорт в Excel
+                </button>
+                <button class="modal-btn primary" id="closeReportBtn">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../assets/js/journal2.js"></script>
+</body>
+</html>
