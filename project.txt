@@ -124,3 +124,6 @@ Metal_Inspect_0/
 │   └── package-lock.json
 ├── docker-compose.yml       # для базы данных postgres
 └── .gitignore
+
+
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
