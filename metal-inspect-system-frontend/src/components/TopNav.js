@@ -1,16 +1,22 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import "../styles/topnav.css";
+import { useAuth } from "../context/AuthContext";
 
 export default function TopNav({ subtitle, userName, userRole }) {
   const navigate = useNavigate();
+  const { roleId } = useAuth();
 
   const linkClass = ({ isActive }) => `nav-btn ${isActive ? "active" : ""}`;
+
+  const goToAccount = () => {
+    if (Number(roleId) === 1) navigate("/admin/account");
+    else navigate("/account");
+  };
 
   return (
     <div className="header">
       <div className="logo-section">
-       
         <div className="logo-text">
           <h1>Metal Inspect</h1>
           <div className="subtitle">{subtitle}</div>
@@ -41,11 +47,11 @@ export default function TopNav({ subtitle, userName, userRole }) {
 
       <div
         className="user-info user-info-clickable"
-        onClick={() => navigate("/account")}
+        onClick={goToAccount}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") navigate("/account");
+          if (e.key === "Enter" || e.key === " ") goToAccount();
         }}
         title="Открыть аккаунт"
       >

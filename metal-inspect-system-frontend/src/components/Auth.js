@@ -1,21 +1,20 @@
 
-import React, { useState } from "react";
+// src/components/Auth.js
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/auth.css";
-import { useEffect } from "react";
-
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";
+import { useAuth } from "../context/AuthContext";
 
 const Auth = () => {
   const [email, setEmail] = useState(""); // логин = email
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
   const navigate = useNavigate();
 
-
-
+  // ✅ берем из контекста
+  const { login, isLoading } = useAuth();
 
   useEffect(() => {
     document.body.classList.add("auth-page");
@@ -24,42 +23,22 @@ const Auth = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
     setError("");
 
-    // таймаут, чтобы не зависать на "Проверка данных..." бесконечно
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const result = await login(email, password);
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal,
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.detail || "Неверная почта или пароль");
-      }
-
-      if (!data?.access_token) {
-        throw new Error("Сервер не вернул access_token");
-      }
-
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("user_email", email);
-
-      navigate("/dashboard");
-    } catch (err) {
-      if (err.name === "AbortError") setError("Сервер не отвечает (таймаут)");
-      else setError(err.message || "Ошибка авторизации");
-    } finally {
-      clearTimeout(timeoutId);
-      setIsLoading(false);
+    if (!result?.ok) {
+      setError(result?.error || "Ошибка авторизации");
+      return;
     }
+
+    // ✅ редирект по роли: admin(1) -> /admin/account, engineer(2) -> /account
+    const role = Number(result.role_id) || Number(localStorage.getItem("role_id")) || 0;
+
+   
+    navigate("/dashboard", { replace: true });
+   
+    
   };
 
   const togglePasswordVisibility = () => setShowPassword((v) => !v);
@@ -82,7 +61,6 @@ const Auth = () => {
             </div>
           )}
 
-          {/* структура 1-в-1 как у тебя, только username -> email */}
           <div className="input-group">
             <label htmlFor="email">
               <i className="fas fa-user"></i> Логин

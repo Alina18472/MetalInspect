@@ -6,7 +6,8 @@ import Account from "./components/AccountPage";
 import AiPanel from "./components/AiPanelPage";
 import Settings from "./components/SettingsPage";
 import Stats from "./components/StatisticPage";
-
+import AdminAccount from "./components/AdminAccountPage";
+import RoleRoute from "./components/RoleRoute";
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem("access_token");
   return token ? children : <Navigate to="/auth" replace />;
@@ -18,14 +19,41 @@ export default function App() {
       <Route path="/auth" element={<Auth />} />
 
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-      <Route path="/journal" element={<PrivateRoute><Journal /></PrivateRoute>} />
-      <Route path="/ai-panel" element={<PrivateRoute><AiPanel /></PrivateRoute>} />
-      <Route path="/stats" element={<PrivateRoute><Stats /></PrivateRoute>} />
-      <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
-      <Route path="/account" element={<PrivateRoute><Account /></PrivateRoute>} />
+      <Route
+        path="/dashboard"
+        element={
+          <RoleRoute allow={[1, 2]}>
+            <Dashboard />
+          </RoleRoute>
+        }
+      />
 
+      <Route path="/journal" element={<RoleRoute allow={[1, 2]}><Journal /></RoleRoute>} />
+      <Route path="/ai-panel" element={<RoleRoute allow={[1, 2]}><AiPanel /></RoleRoute>} />
+      <Route path="/stats" element={<RoleRoute allow={[1, 2]}><Stats /></RoleRoute>} />
+      <Route path="/settings" element={<RoleRoute allow={[1]}><Settings /></RoleRoute>} />
+    
+     
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route
+        path="/admin/account"
+        element={
+          <RoleRoute allow={[1]}>
+            <AdminAccount />
+          </RoleRoute>
+        }
+      />
+
+      <Route
+        path="/account"
+        element={
+          <RoleRoute allow={[2]}>
+            <Account />
+          </RoleRoute>
+        }
+      />
+
     </Routes>
   );
 }

@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem("access_token"));
   const [userEmail, setUserEmail] = useState(() => localStorage.getItem("user_email") || "");
+  const [roleId, setRoleId] = useState(() => Number(localStorage.getItem("role_id")) || 0);
   const [isLoading, setIsLoading] = useState(false);
 
   const isAuthenticated = !!accessToken;
@@ -13,17 +14,25 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setIsLoading(true);
     try {
-      // Выбери ОДИН вариант:
       const data = await api.loginJson(email, password);
-    //   const data = await api.loginForm(email, password); // <-- если form-data
+
+      if (!data?.access_token) throw new Error("Сервер не вернул access_token");
+
+      const role = Number(data?.user?.role_id) || 0;
+
 
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("user_email", email);
+      localStorage.setItem("role_id", String(role));
+      localStorage.setItem("user", JSON.stringify(data.user));
+
 
       setAccessToken(data.access_token);
       setUserEmail(email);
+      setRoleId(role);
 
-      return { ok: true };
+      // ✅ вернем роль, чтобы Auth.js мог решить куда редиректить
+      return { ok: true, role_id: role };
     } catch (e) {
       return { ok: false, error: e?.message || "Login failed" };
     } finally {
@@ -34,13 +43,15 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("user_email");
+    localStorage.removeItem("role_id");
     setAccessToken(null);
     setUserEmail("");
+    setRoleId(0);
   };
 
   const value = useMemo(
-    () => ({ accessToken, userEmail, isAuthenticated, isLoading, login, logout }),
-    [accessToken, userEmail, isAuthenticated, isLoading]
+    () => ({ accessToken, userEmail, roleId, isAuthenticated, isLoading, login, logout }),
+    [accessToken, userEmail, roleId, isAuthenticated, isLoading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
