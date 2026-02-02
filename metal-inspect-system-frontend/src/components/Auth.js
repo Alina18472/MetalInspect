@@ -1,38 +1,50 @@
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import "../styles/auth.css";
+import { useEffect } from "react";
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";
 
 const Auth = () => {
-  const [email, setEmail] = useState("");       // логин = почта
+  const [email, setEmail] = useState(""); // логин = email
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
+
+
+
+  useEffect(() => {
+    document.body.classList.add("auth-page");
+    return () => document.body.classList.remove("auth-page");
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
 
+    // таймаут, чтобы не зависать на "Проверка данных..." бесконечно
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        signal: controller.signal,
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // FastAPI часто возвращает detail
         throw new Error(data?.detail || "Неверная почта или пароль");
       }
 
-      // Ожидаем: { access_token: "...", token_type: "bearer" }
       if (!data?.access_token) {
         throw new Error("Сервер не вернул access_token");
       }
@@ -42,19 +54,19 @@ const Auth = () => {
 
       navigate("/dashboard");
     } catch (err) {
-      setError(err.message || "Ошибка авторизации");
+      if (err.name === "AbortError") setError("Сервер не отвечает (таймаут)");
+      else setError(err.message || "Ошибка авторизации");
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   };
 
-  const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
+  const togglePasswordVisibility = () => setShowPassword((v) => !v);
 
   return (
     <div className="login-container">
-      <div className="header">
+      <div className="header-auth">
         <div className="logo">
           <h1>Metal Inspect</h1>
           <div className="subtitle">Система распознавания трещин в слитках</div>
@@ -70,6 +82,7 @@ const Auth = () => {
             </div>
           )}
 
+          {/* структура 1-в-1 как у тебя, только username -> email */}
           <div className="input-group">
             <label htmlFor="email">
               <i className="fas fa-user"></i> Логин
@@ -113,6 +126,7 @@ const Auth = () => {
               id="togglePassword"
               onClick={togglePasswordVisibility}
               style={{ cursor: "pointer" }}
+              aria-label="toggle password"
             >
               <i className={`fas fa-eye${showPassword ? "-slash" : ""}`}></i>
             </div>

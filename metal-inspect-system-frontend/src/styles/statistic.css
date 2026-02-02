@@ -1,21 +1,15 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-body {
+/* Обнуление и базовые стили для страницы статистики */
+.statistic-page {
     background: linear-gradient(135deg, #0c1a2d 0%, #1a2b3c 50%, #0d2335 100%);
     color: #e0e0e0;
     min-height: 100vh;
     padding: 20px;
     position: relative;
     overflow-x: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-body::before {
-    content: '';
+.statistic-page-bg {
     position: absolute;
     top: 0;
     left: 0;
@@ -25,133 +19,30 @@ body::before {
         radial-gradient(circle at 20% 30%, rgba(30, 90, 130, 0.15) 0%, transparent 20%),
         radial-gradient(circle at 80% 70%, rgba(40, 100, 150, 0.1) 0%, transparent 20%);
     z-index: 0;
+    pointer-events: none;
 }
 
-.container {
+.statistic-container {
     position: relative;
     z-index: 1;
     max-width: 1800px;
     margin: 0 auto;
-    height: calc(100vh - 40px);
     display: flex;
     flex-direction: column;
-}
-
-/* Заголовок */
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 0 25px 0;
-    margin-bottom: 10px;
-    border-bottom: 1px solid rgba(60, 120, 180, 0.3);
-    width: 100%;
-}
-
-.logo-section {
-    display: flex;
-    align-items: center;
-}
-
-.logo-icon {
-    font-size: 32px;
-    margin-right: 15px;
-    color: #4dabf7;
-    text-shadow: 0 0 8px rgba(77, 171, 247, 0.5);
-}
-
-.logo-text h1 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    background: linear-gradient(90deg, #e0e0e0, #a0c8f0);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    letter-spacing: 1px;
-}
-
-.logo-text .subtitle {
-    font-size: 0.9rem;
-    color: #8fb4d9;
-    margin-top: 3px;
-}
-
-.user-info {
-    display: flex;
-    align-items: center;
-    background-color: rgba(18, 30, 44, 0.7);
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: 1px solid rgba(60, 120, 180, 0.2);
-}
-
-.user-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #2a6bc0, #3c78b4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 12px;
-    font-size: 1.2rem;
-}
-
-.user-name {
-    font-weight: 600;
-    color: #e0e0e0;
-}
-
-.user-role {
-    font-size: 0.8rem;
-    color: #8fb4d9;
-}
-
-.nav-buttons {
-    display: flex;
-    gap: 10px;
-}
-
-.nav-btn {
-    background-color: rgba(30, 45, 65, 0.6);
-    color: #b0c4de;
-    border: 1px solid rgba(60, 120, 180, 0.3);
-    padding: 10px 20px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-}
-
-.nav-btn i {
-    margin-right: 8px;
-}
-
-.nav-btn:hover {
-    background-color: rgba(40, 65, 95, 0.8);
-    color: #e0e0e0;
-    border-color: rgba(77, 171, 247, 0.5);
-}
-
-.nav-btn.active {
-    background: linear-gradient(90deg, #1e5aa0 0%, #2a6bc0 100%);
-    color: white;
-    border-color: rgba(77, 171, 247, 0.5);
+    min-height: 100vh;
 }
 
 /* Основное содержимое */
-.main-content {
+.statistic-main-content {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 20px;
-    height: calc(100% - 90px);
+    margin-top: 20px;
 }
 
-/* Верхняя панель с фильтрами */
-.filters-panel {
+/* Панель фильтров */
+.statistic-filters-panel {
     background-color: rgba(18, 30, 44, 0.85);
     border-radius: 12px;
     box-shadow: 
@@ -163,33 +54,38 @@ body::before {
     padding: 20px 25px;
 }
 
-.filters-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
+.statistic-filters-flex {
+    display: flex;
+    flex-wrap: wrap;
     gap: 20px;
+    align-items: flex-end;
 }
 
-.filter-group {
+.statistic-filter-group {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex: 1;
+    min-width: 180px;
 }
 
-.filter-label {
+.statistic-filter-label {
     font-size: 0.9rem;
     color: #b0c4de;
     display: flex;
     align-items: center;
+    font-weight: 500;
 }
 
-.filter-label i {
+.statistic-filter-label i {
     margin-right: 8px;
     color: #4dabf7;
+    font-size: 0.9rem;
 }
 
-.filter-select {
+.statistic-filter-select {
     width: 100%;
-    padding: 10px 15px;
+    padding: 12px 15px;
     background-color: rgba(30, 45, 65, 0.8);
     border: 1px solid rgba(60, 120, 180, 0.3);
     border-radius: 8px;
@@ -204,20 +100,22 @@ body::before {
     padding-right: 40px;
 }
 
-.filter-select:focus {
+.statistic-filter-select:focus {
     outline: none;
     border-color: #4dabf7;
     box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.2);
+    background-color: rgba(35, 55, 80, 0.9);
 }
 
-.filter-buttons {
+.statistic-filter-buttons {
     display: flex;
-    align-items: flex-end;
     gap: 10px;
+    margin-top: 10px;
+    flex-shrink: 0;
 }
 
-.filter-btn {
-    padding: 10px 20px;
+.statistic-filter-btn {
+    padding: 12px 20px;
     border-radius: 8px;
     border: none;
     font-weight: 600;
@@ -227,52 +125,56 @@ body::before {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    font-size: 0.95rem;
 }
 
-.filter-btn.primary {
+.statistic-filter-btn-primary {
     background: linear-gradient(90deg, #1e5aa0 0%, #2a6bc0 100%);
     color: white;
 }
 
-.filter-btn.primary:hover {
+.statistic-filter-btn-primary:hover {
     background: linear-gradient(90deg, #2a6bc0 0%, #3a7bd0 100%);
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(30, 90, 160, 0.4);
 }
 
-.filter-btn.secondary {
+.statistic-filter-btn-secondary {
     background-color: rgba(60, 120, 180, 0.2);
     border: 1px solid rgba(60, 120, 180, 0.4);
     color: #b0c4de;
 }
 
-.filter-btn.secondary:hover {
+.statistic-filter-btn-secondary:hover {
     background-color: rgba(60, 120, 180, 0.4);
     color: #e0e0e0;
 }
 
-/* Основная панель с статистикой */
-.stats-panel {
+/* Основная панель статистики */
+.statistic-stats-panel {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 40px; /* Добавляем отступ снизу для удобства прокрутки */
+}
+
+.statistic-main-stats {
+    flex: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.statistic-sidebar-stats {
     flex: 1;
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 20px;
-}
-
-.main-stats {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    min-width: 300px;
 }
 
-.sidebar-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-/* Общие стили для панелей */
-.stats-container {
+/* Общие стили для контейнеров статистики */
+.statistic-stats-container {
     background-color: rgba(18, 30, 44, 0.85);
     border-radius: 12px;
     box-shadow: 
@@ -281,41 +183,57 @@ body::before {
         inset 0 0 20px rgba(0, 0, 0, 0.3);
     overflow: hidden;
     backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
 }
 
-.panel-header {
+.statistic-panel-header {
     background: linear-gradient(90deg, #1a3a5f 0%, #2a4a6f 100%);
     padding: 18px 25px;
     border-bottom: 1px solid rgba(60, 120, 180, 0.4);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 
-.panel-header h2 {
+.statistic-panel-header-title {
     font-size: 1.2rem;
     color: #e0e0e0;
     display: flex;
     align-items: center;
+    font-weight: 600;
 }
 
-.panel-header h2 i {
+.statistic-panel-header-title i {
     margin-right: 12px;
     color: #4dabf7;
 }
 
-.panel-content {
+.statistic-period-info,
+.statistic-defects-total {
+    font-size: 0.9rem;
+    color: #8fb4d9;
+    background-color: rgba(30, 45, 65, 0.6);
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+.statistic-panel-content {
     padding: 25px;
+    flex: 1;
+    overflow: visible; /* Убираем внутреннюю прокрутку */
 }
 
-/* Общая статистика */
-.overall-stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+/* Общая статистика - карточки */
+.statistic-overall-stats {
+    display: flex;
+    flex-wrap: wrap;
     gap: 20px;
+    margin-bottom: 30px;
 }
 
-.stat-card {
+.statistic-stat-card {
     background-color: rgba(30, 45, 65, 0.6);
     border-radius: 8px;
     padding: 25px;
@@ -326,82 +244,91 @@ body::before {
     text-align: center;
     border: 1px solid rgba(60, 120, 180, 0.2);
     transition: all 0.3s ease;
+    flex: 1;
+    min-width: 200px;
 }
 
-.stat-card:hover {
+.statistic-stat-card:hover {
     transform: translateY(-5px);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
     border-color: rgba(77, 171, 247, 0.4);
 }
 
-.stat-value {
+.statistic-stat-value {
     font-size: 2.5rem;
     font-weight: 700;
     margin-bottom: 8px;
 }
 
-.stat-label {
+.statistic-stat-label {
     font-size: 0.95rem;
     color: #b0c4de;
     margin-bottom: 5px;
 }
 
-.stat-change {
+.statistic-stat-change {
     font-size: 0.85rem;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
+    margin-top: 5px;
 }
 
-.change-up {
+.statistic-change-up {
     color: #4CAF50;
 }
 
-.change-down {
+.statistic-change-down {
     color: #f44336;
 }
 
 /* Цвета для статистических карточек */
-.stat-total {
+.statistic-stat-total {
     border-top: 4px solid #2196F3;
 }
 
-.stat-total .stat-value {
+.statistic-stat-total .statistic-stat-value {
     color: #2196F3;
 }
 
-.stat-defects {
+.statistic-stat-defects {
     border-top: 4px solid #f44336;
 }
 
-.stat-defects .stat-value {
+.statistic-stat-defects .statistic-stat-value {
     color: #f44336;
 }
 
-.stat-quality {
+.statistic-stat-quality {
     border-top: 4px solid #4CAF50;
 }
 
-.stat-quality .stat-value {
+.statistic-stat-quality .statistic-stat-value {
     color: #4CAF50;
 }
 
-.stat-cost {
+.statistic-stat-cost {
     border-top: 4px solid #ff9800;
 }
 
-.stat-cost .stat-value {
+.statistic-stat-cost .statistic-stat-value {
     color: #ff9800;
 }
 
 /* Графики */
-.chart-container {
-    height: 300px;
+.statistic-chart-container {
+    height: 250px;
     position: relative;
+    margin-top: 20px;
+    margin-bottom: 30px;
 }
 
-.chart-placeholder {
+.statistic-pie-chart-container {
+    height: 200px;
+}
+
+.statistic-chart-placeholder {
     width: 100%;
     height: 100%;
     display: flex;
@@ -409,43 +336,64 @@ body::before {
     align-items: center;
     justify-content: center;
     color: #8fb4d9;
+    background-color: rgba(30, 45, 65, 0.6);
+    border-radius: 8px;
+    border: 1px solid rgba(60, 120, 180, 0.2);
+    padding: 20px;
 }
 
-.chart-placeholder i {
+.statistic-chart-placeholder i {
     font-size: 3rem;
     margin-bottom: 15px;
     opacity: 0.7;
 }
 
-.chart-placeholder .chart-title {
+.statistic-chart-title {
     font-size: 1.2rem;
     margin-bottom: 10px;
     color: #b0c4de;
+    text-align: center;
+}
+
+.statistic-chart-description {
+    font-size: 0.9rem;
+    text-align: center;
+    line-height: 1.4;
 }
 
 /* Распределение дефектов */
-.defects-distribution {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+.statistic-defects-distribution {
+    display: flex;
+    flex-wrap: wrap;
     gap: 20px;
-    margin-top: 20px;
+    margin-bottom: 30px;
 }
 
-.defect-type {
+.statistic-defect-type {
     background-color: rgba(30, 45, 65, 0.6);
     border-radius: 8px;
     padding: 20px;
     border-left: 4px solid;
+    flex: 1;
+    min-width: 200px;
+    transition: all 0.3s ease;
 }
 
-.defect-header {
+.statistic-defect-type:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    border-color: rgba(77, 171, 247, 0.4);
+    background-color: rgba(35, 55, 80, 0.8);
+}
+
+.statistic-defect-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
 }
 
-.defect-name {
+.statistic-defect-name {
     font-weight: 600;
     color: #e0e0e0;
     display: flex;
@@ -453,57 +401,93 @@ body::before {
     gap: 10px;
 }
 
-.defect-count {
+.statistic-defect-name i {
+    font-size: 1.1rem;
+}
+
+.statistic-defect-count {
     font-size: 1.8rem;
     font-weight: 700;
 }
 
-.defect-percentage {
+.statistic-defect-percentage {
     font-size: 0.9rem;
     color: #8fb4d9;
     margin-top: 5px;
 }
 
-.defect-crack {
+/* Цвета для типов дефектов */
+.statistic-defect-crack {
     border-left-color: #f44336;
 }
 
-.defect-crack .defect-count {
+.statistic-defect-crack .statistic-defect-count {
     color: #f44336;
 }
 
-.defect-porosity {
+.statistic-defect-porosity {
     border-left-color: #ff9800;
 }
 
-.defect-porosity .defect-count {
+.statistic-defect-porosity .statistic-defect-count {
     color: #ff9800;
 }
 
-.defect-inclusion {
+.statistic-defect-inclusion {
     border-left-color: #2196F3;
 }
 
-.defect-inclusion .defect-count {
+.statistic-defect-inclusion .statistic-defect-count {
     color: #2196F3;
 }
 
-.defect-scratch {
+.statistic-defect-scratch {
     border-left-color: #9C27B0;
 }
 
-.defect-scratch .defect-count {
+.statistic-defect-scratch .statistic-defect-count {
     color: #9C27B0;
 }
 
+/* Прогресс-бар */
+.statistic-progress-container {
+    height: 8px;
+    background-color: rgba(30, 45, 65, 0.6);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 5px;
+}
+
+.statistic-progress-fill {
+    height: 100%;
+    border-radius: 4px;
+}
+
+.statistic-defect-crack .statistic-progress-fill {
+    background-color: #f44336;
+}
+
+.statistic-defect-porosity .statistic-progress-fill {
+    background-color: #ff9800;
+}
+
+.statistic-defect-inclusion .statistic-progress-fill {
+    background-color: #2196F3;
+}
+
+.statistic-defect-scratch .statistic-progress-fill {
+    background-color: #9C27B0;
+}
+
 /* Статистика по сменам */
-.shifts-stats {
+.statistic-shifts-stats {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    margin-bottom: 20px;
 }
 
-.shift-row {
+.statistic-shift-row {
     display: flex;
     align-items: center;
     background-color: rgba(30, 45, 65, 0.6);
@@ -512,72 +496,94 @@ body::before {
     transition: all 0.3s ease;
 }
 
-.shift-row:hover {
+.statistic-shift-row:hover {
     background-color: rgba(35, 55, 80, 0.8);
     transform: translateX(5px);
 }
 
-.shift-info {
+.statistic-shift-info {
     flex: 1;
 }
 
-.shift-name {
+.statistic-shift-name {
     font-weight: 600;
     color: #e0e0e0;
     margin-bottom: 5px;
 }
 
-.shift-time {
+.statistic-shift-time {
     font-size: 0.85rem;
     color: #8fb4d9;
 }
 
-.shift-stats {
+.statistic-shift-stats {
     display: flex;
     gap: 20px;
 }
 
-.shift-stat {
+.statistic-shift-stat {
     text-align: center;
+    min-width: 60px;
 }
 
-.shift-value {
+.statistic-shift-value {
     font-weight: 700;
     font-size: 1.2rem;
+    margin-bottom: 2px;
 }
 
-.shift-label {
+.statistic-shift-defects {
+    color: #f44336;
+}
+
+.statistic-shift-ingots {
+    color: #2196F3;
+}
+
+.statistic-shift-quality {
+    color: #4CAF50;
+}
+
+.statistic-shift-label {
     font-size: 0.8rem;
     color: #8fb4d9;
 }
 
 /* Heat Map распределения дефектов */
-.heatmap-container {
-    height: 200px;
+.statistic-heatmap-description {
+    color: #b0c4de;
+    font-size: 0.95rem;
+    margin-bottom: 15px;
+}
+
+.statistic-heatmap-container {
+    height: 180px;
     position: relative;
     background-color: #0a1520;
     border-radius: 8px;
     overflow: hidden;
-    margin-top: 15px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(60, 120, 180, 0.2);
 }
 
-.heatmap-grid {
+.statistic-heatmap-grid {
     width: 100%;
     height: 100%;
-    display: grid;
-    grid-template-columns: repeat(10, 1fr);
-    grid-template-rows: repeat(5, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 2px;
     padding: 10px;
 }
 
-.heatmap-cell {
+.statistic-heatmap-cell {
+    flex: 1 0 calc(10% - 2px);
+    height: calc(20% - 2px);
     border-radius: 2px;
     transition: all 0.3s ease;
     position: relative;
 }
 
-.heatmap-cell:hover::after {
+.statistic-heatmap-cell:hover::after {
     content: attr(data-defects);
     position: absolute;
     top: -30px;
@@ -593,106 +599,109 @@ body::before {
     border: 1px solid rgba(77, 171, 247, 0.3);
 }
 
-.heatmap-low {
+/* Цвета Heat Map */
+.statistic-heatmap-low {
     background-color: rgba(76, 175, 80, 0.2);
     border: 1px solid rgba(76, 175, 80, 0.3);
 }
 
-.heatmap-medium {
+.statistic-heatmap-medium {
     background-color: rgba(255, 152, 0, 0.3);
     border: 1px solid rgba(255, 152, 0, 0.4);
 }
 
-.heatmap-high {
+.statistic-heatmap-high {
     background-color: rgba(244, 67, 54, 0.4);
     border: 1px solid rgba(244, 67, 54, 0.5);
 }
 
-.heatmap-critical {
+.statistic-heatmap-critical {
     background-color: rgba(244, 67, 54, 0.7);
     border: 1px solid rgba(244, 67, 54, 0.8);
 }
 
-/* Топ проблемных участков */
-.problem-areas {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.area-row {
-    display: flex;
-    align-items: center;
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    padding: 12px 15px;
-    transition: all 0.3s ease;
-}
-
-.area-row:hover {
-    background-color: rgba(35, 55, 80, 0.8);
-}
-
-.area-name {
-    flex: 1;
-    font-weight: 500;
-    color: #e0e0e0;
-}
-
-.area-count {
-    background-color: rgba(244, 67, 54, 0.2);
-    color: #f44336;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-
 /* Экономические показатели */
-.economic-stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+.statistic-economic-stats {
+    display: flex;
+    flex-wrap: wrap;
     gap: 15px;
-    margin-top: 20px;
+    margin-bottom: 20px;
 }
 
-.economic-card {
+.statistic-economic-card {
     background-color: rgba(30, 45, 65, 0.6);
     border-radius: 8px;
     padding: 20px;
     text-align: center;
     border: 1px solid rgba(60, 120, 180, 0.2);
+    flex: 1;
+    min-width: 150px;
+    transition: all 0.3s ease;
 }
 
-.economic-value {
+.statistic-economic-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.statistic-economic-value {
     font-size: 1.8rem;
     font-weight: 700;
     margin-bottom: 5px;
 }
 
-.economic-label {
+.statistic-economic-label {
     font-size: 0.9rem;
     color: #b0c4de;
 }
 
-.economic-savings .economic-value {
+.statistic-economic-savings .statistic-economic-value {
     color: #4CAF50;
 }
 
-.economic-roi .economic-value {
+.statistic-economic-roi .statistic-economic-value {
     color: #2196F3;
 }
 
+.statistic-economic-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.statistic-economic-detail {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.1);
+}
+
+.statistic-economic-detail:last-child {
+    border-bottom: none;
+}
+
+.statistic-economic-detail-value {
+    font-weight: 600;
+}
+
+.statistic-economic-positive {
+    color: #4CAF50;
+}
+
+.statistic-economic-negative {
+    color: #f44336;
+}
+
 /* Легенда */
-.legend {
+.statistic-legend {
     display: flex;
     gap: 20px;
     margin-top: 20px;
     flex-wrap: wrap;
 }
 
-.legend-item {
+.statistic-legend-item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -700,95 +709,20 @@ body::before {
     color: #b0c4de;
 }
 
-.legend-color {
+.statistic-legend-color {
     width: 15px;
     height: 15px;
     border-radius: 3px;
 }
 
-/* Адаптивность */
-@media (max-width: 1400px) {
-    .stats-panel {
-        grid-template-columns: 1fr;
-    }
-    
-    .filters-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
-@media (max-width: 1000px) {
-    .overall-stats {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .defects-distribution {
-        grid-template-columns: 1fr;
-    }
-    
-    .filters-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-@media (max-width: 768px) {
-    .header {
-        flex-direction: column;
-        gap: 15px;
-        align-items: flex-start;
-    }
-    
-    .nav-buttons {
-        width: 100%;
-        justify-content: center;
-    }
-    
-    .overall-stats {
-        grid-template-columns: 1fr;
-    }
-    
-    .filters-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .economic-stats {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Таблицы статистики */
-.stats-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}
-
-.stats-table th {
-    padding: 15px;
-    text-align: left;
-    font-weight: 600;
-    color: #b0c4de;
-    border-bottom: 1px solid rgba(60, 120, 180, 0.3);
-    background-color: rgba(25, 40, 60, 0.6);
-}
-
-.stats-table td {
-    padding: 15px;
-    border-bottom: 1px solid rgba(60, 120, 180, 0.1);
-}
-
-.stats-table tbody tr:hover {
-    background-color: rgba(30, 90, 130, 0.1);
-}
-
 /* Экспорт данных */
-.export-options {
+.statistic-export-options {
     display: flex;
     gap: 10px;
     margin-top: 20px;
 }
 
-.export-btn {
+.statistic-export-btn {
     padding: 10px 20px;
     border-radius: 8px;
     border: none;
@@ -799,51 +733,180 @@ body::before {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    font-size: 0.9rem;
+    flex: 1;
 }
 
-.export-btn.excel {
+.statistic-export-btn:hover {
+    transform: translateY(-2px);
+}
+
+.statistic-export-excel {
     background: linear-gradient(90deg, #217346 0%, #2e8b57 100%);
     color: white;
 }
 
-.export-btn.excel:hover {
+.statistic-export-excel:hover {
     background: linear-gradient(90deg, #2e8b57 0%, #3cb371 100%);
-    transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(46, 139, 87, 0.4);
 }
 
-.export-btn.pdf {
+.statistic-export-pdf {
     background: linear-gradient(90deg, #c62828 0%, #d32f2f 100%);
     color: white;
 }
 
-.export-btn.pdf:hover {
+.statistic-export-pdf:hover {
     background: linear-gradient(90deg, #d32f2f 0%, #e53935 100%);
-    transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(211, 47, 47, 0.4);
 }
 
-/* Прогресс-бары для визуализации */
-.progress-container {
-    height: 8px;
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-top: 5px;
+/* Уведомления */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 8px;
+    z-index: 1000;
+    animation: statistic-slideIn 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
 }
 
-.progress-fill {
-    height: 100%;
-    border-radius: 4px;
+.notification.success {
+    background-color: rgba(76, 175, 80, 0.9);
+    color: white;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.notification.info {
+    background-color: rgba(33, 150, 243, 0.9);
+    color: white;
+    border: 1px solid rgba(33, 150, 243, 0.3);
 }
 
 /* Анимации */
-@keyframes pulse {
+@keyframes statistic-slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes statistic-pulse {
     0% { opacity: 0.7; }
     50% { opacity: 1; }
     100% { opacity: 0.7; }
 }
 
-.pulse-animation {
-    animation: pulse 2s infinite;
+.statistic-pulse-animation {
+    animation: statistic-pulse 2s infinite;
+}
+
+/* Адаптивность */
+@media (max-width: 1400px) {
+    .statistic-stats-panel {
+        flex-direction: column;
+    }
+    
+    .statistic-main-stats,
+    .statistic-sidebar-stats {
+        min-width: 100%;
+    }
+    
+    .statistic-sidebar-stats {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    
+    .statistic-stats-container {
+        flex: 1;
+        min-width: 300px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .statistic-filters-flex {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .statistic-filter-group {
+        min-width: 100%;
+    }
+    
+    .statistic-filter-buttons {
+        align-self: flex-end;
+    }
+}
+
+@media (max-width: 900px) {
+    .statistic-overall-stats {
+        flex-direction: column;
+    }
+    
+    .statistic-stat-card {
+        min-width: 100%;
+    }
+    
+    .statistic-defects-distribution {
+        flex-direction: column;
+    }
+    
+    .statistic-defect-type {
+        min-width: 100%;
+    }
+    
+    .statistic-sidebar-stats {
+        flex-direction: column;
+    }
+    
+    .statistic-stats-container {
+        min-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .statistic-page {
+        padding: 10px;
+    }
+    
+    .statistic-container {
+        height: auto;
+    }
+    
+    .statistic-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .statistic-period-info,
+    .statistic-defects-total {
+        align-self: flex-start;
+    }
+    
+    .statistic-shift-stats {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .statistic-shift-stat {
+        min-width: 50px;
+    }
+    
+    .notification {
+        max-width: calc(100% - 40px);
+        left: 20px;
+        right: 20px;
+    }
 }

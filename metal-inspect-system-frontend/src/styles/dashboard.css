@@ -1,0 +1,702 @@
+
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  /* Чтобы не появлялся внешний скролл из-за flex-детей */
+  html,
+  body {
+    height: 100%;
+  }
+  
+  /* Фон и общий стиль страницы */
+  .dashboard-page {
+    background: linear-gradient(135deg, #0c1a2d 0%, #1a2b3c 50%, #0d2335 100%);
+    color: #e0e0e0;
+  
+    /* Ключ: страница НЕ скроллится, скроллим только нужные блоки */
+    height: 100vh;
+    overflow: hidden;
+  
+    padding: 20px;
+    position: relative;
+  }
+  
+  .dashboard-page::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+        circle at 20% 30%,
+        rgba(30, 90, 130, 0.15) 0%,
+        transparent 20%
+      ),
+      radial-gradient(
+        circle at 80% 70%,
+        rgba(40, 100, 150, 0.1) 0%,
+        transparent 20%
+      );
+    z-index: 0;
+  }
+  
+  /* Главный контейнер */
+  .dashboard-container {
+    position: relative;
+    z-index: 1;
+  
+    max-width: 1800px;
+    margin: 0 auto;
+  
+    height: 100%;
+    min-height: 0; /* Критично для flex */
+    overflow: hidden;
+  
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* =========================================================
+     MAIN LAYOUT
+     ========================================================= */
+  
+  .dashboard-main-content {
+    display: flex;
+    flex: 1;
+    min-height: 0; /* Ключ для вложенных скроллов */
+    gap: 20px;
+  
+    /* НЕ используем calc(100% - 90px), чтобы не ловить overflow */
+    height: auto;
+  }
+  
+  /* Левая панель */
+  .video-panel {
+    flex: 0 0 70%;
+    background-color: rgba(18, 30, 44, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(60, 120, 180, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(10px);
+    min-height: 0;
+  }
+  
+  .video-header {
+    background: linear-gradient(90deg, #1a3a5f 0%, #2a4a6f 100%);
+    padding: 15px 20px;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.4);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  
+  .video-header h2 {
+    font-size: 1.3rem;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+  }
+  
+  .video-header h2 i {
+    margin-right: 10px;
+    color: #4dabf7;
+  }
+  
+  .camera-info {
+    display: flex;
+    align-items: center;
+    background-color: rgba(30, 45, 65, 0.8);
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #b0c4de;
+  }
+  
+  .camera-info i {
+    margin-right: 8px;
+    color: #4dabf7;
+  }
+  
+  .video-container {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background-color: #0a1520;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .video-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        45deg,
+        #0a1520 25%,
+        #0f1c2a 25%,
+        #0f1c2a 50%,
+        #0a1520 50%,
+        #0a1520 75%,
+        #0f1c2a 75%,
+        #0f1c2a
+      );
+    background-size: 40px 40px;
+    animation: move 4s linear infinite;
+    position: relative;
+  }
+  
+  @keyframes move {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 40px 40px;
+    }
+  }
+  
+  .video-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  
+  .ai-box {
+    position: absolute;
+    border: 2px solid;
+    border-radius: 4px;
+    pointer-events: all;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  
+  .ai-box:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.35);
+  }
+  
+  .confidence-label {
+    position: absolute;
+    top: -25px;
+    left: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #ffffff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  
+  .video-controls {
+    padding: 15px 20px;
+    background-color: rgba(25, 40, 60, 0.8);
+    border-top: 1px solid rgba(60, 120, 180, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 12px;
+  }
+  
+  .control-btn {
+    background: linear-gradient(90deg, #1e5aa0 0%, #2a6bc0 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.3s ease;
+  }
+  
+  .control-btn i {
+    margin-right: 8px;
+  }
+  
+  .control-btn:hover {
+    background: linear-gradient(90deg, #2a6bc0 0%, #3a7bd0 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(30, 90, 160, 0.4);
+  }
+  
+  .control-btn.secondary {
+    background: rgba(60, 120, 180, 0.2);
+    border: 1px solid rgba(60, 120, 180, 0.4);
+  }
+  
+  .control-btn.secondary:hover {
+    background: rgba(60, 120, 180, 0.4);
+  }
+  
+  .fps-indicator {
+    background-color: rgba(30, 45, 65, 0.8);
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #8fb4d9;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  
+  .fps-indicator i {
+    margin-right: 8px;
+  }
+  
+  /* Правая колонка */
+  .stats-panel {
+    flex: 0 0 30%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 0;
+  }
+  
+  /* Статистика */
+  .stats-container {
+    background-color: rgba(18, 30, 44, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(60, 120, 180, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  
+  /* События */
+  .events-container {
+    background-color: rgba(18, 30, 44, 0.85);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(60, 120, 180, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  
+  .panel-header {
+    background: linear-gradient(90deg, #1a3a5f 0%, #2a4a6f 100%);
+    padding: 15px 20px;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.4);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  
+  .panel-header h2 {
+    font-size: 1.2rem;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+  }
+  
+  .panel-header h2 i {
+    margin-right: 10px;
+    color: #4dabf7;
+  }
+  
+  /* Карточки статистики */
+  .stats-content {
+    padding: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    min-height: 0;
+  }
+  
+  .stat-card {
+    background-color: rgba(30, 45, 65, 0.6);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(60, 120, 180, 0.2);
+    transition: all 0.3s ease;
+  
+    flex: 1 1 calc(50% - 8px);
+    min-width: 140px;
+  }
+  
+  .stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    border-color: rgba(77, 171, 247, 0.4);
+  }
+  
+  .stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #4dabf7;
+    margin-bottom: 5px;
+  }
+  
+  .stat-label {
+    font-size: 0.9rem;
+    color: #b0c4de;
+    text-align: center;
+  }
+  
+  .stat-trend {
+    font-size: 0.8rem;
+    margin-top: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .trend-up {
+    color: #4caf50;
+  }
+  
+  .trend-down {
+    color: #f44336;
+  }
+  
+  /* =========================================================
+     EVENTS TABLE (одна прокрутка — у .events-content)
+     ========================================================= */
+  
+  .events-content {
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    overflow: auto; /* Единственная прокрутка для событий */
+  }
+  
+  /* нормальная таблица без display:flex */
+  .events-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .events-table thead {
+    position: sticky;
+    top: 0;
+    background-color: rgba(25, 40, 60, 0.95);
+    z-index: 10;
+  }
+  
+  .events-table th {
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    color: #b0c4de;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.3);
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+  
+  .events-table td {
+    padding: 12px 15px;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.1);
+    vertical-align: top;
+  }
+  
+  .events-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  
+  .events-table tbody tr:hover {
+    background-color: rgba(30, 90, 130, 0.2);
+  }
+  
+  .event-time {
+    color: #8fb4d9;
+    white-space: nowrap;
+  }
+  
+  .event-id {
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+  
+  /* confidence */
+  .confidence-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .confidence-bar {
+    width: 60px;
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  
+  .confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+  
+  .high-confidence {
+    background-color: #f44336;
+  }
+  
+  .medium-confidence {
+    background-color: #ff9800;
+  }
+  
+  .low-confidence {
+    background-color: #4caf50;
+  }
+  
+  /* Заглушка */
+  .no-data {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #6d8fb0;
+    font-style: italic;
+  }
+  
+  /* =========================================================
+     SYSTEM STATUS (если используется)
+     ========================================================= */
+  
+  .system-status {
+    display: flex;
+    align-items: center;
+    background-color: rgba(30, 60, 90, 0.5);
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+  }
+  
+  .pulse {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #4caf50;
+    margin-right: 8px;
+    box-shadow: 0 0 0 rgba(76, 175, 80, 0.4);
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 6px rgba(76, 175, 80, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+    }
+  }
+  
+  /* =========================================================
+     MODAL
+     ========================================================= */
+  
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex; /* ты управляешь display через inline style */
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px; /* чтобы на маленьких экранах не прилипало */
+  }
+  
+  .modal-content {
+    background-color: rgba(18, 30, 44, 0.95);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 800px;
+  
+    /* чтобы модалка не вылезала за экран */
+    max-height: 90vh;
+  
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7),
+      0 0 0 1px rgba(60, 120, 180, 0.3);
+  
+    overflow: hidden;
+    backdrop-filter: blur(15px);
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .modal-header {
+    background: linear-gradient(90deg, #1a3a5f 0%, #2a4a6f 100%);
+    padding: 20px;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.4);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  
+  .modal-header h3 {
+    font-size: 1.4rem;
+    color: #e0e0e0;
+  }
+  
+  .close-modal {
+    background: none;
+    border: none;
+    color: #8fb4d9;
+    font-size: 1.7rem;
+    cursor: pointer;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+  }
+  
+  .close-modal:hover {
+    color: #e0e0e0;
+    background-color: rgba(77, 171, 247, 0.08);
+  }
+  
+  .modal-body {
+    padding: 25px;
+    display: flex;
+    gap: 25px;
+  
+    /* если контента много — скроллим только body модалки */
+    overflow: auto;
+  }
+  
+  .detail-image {
+    background-color: #0a1520;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 250px;
+    flex: 1;
+  }
+  
+  .detail-info {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    flex: 1;
+  }
+  
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(60, 120, 180, 0.1);
+  }
+  
+  .detail-label {
+    color: #b0c4de;
+    font-weight: 500;
+  }
+  
+  .detail-value {
+    color: #e0e0e0;
+    font-weight: 600;
+    text-align: right;
+  }
+  
+  .detail-critical {
+    color: #f44336;
+  }
+  
+  .detail-warning {
+    color: #ff9800;
+  }
+  
+  .detail-ok {
+    color: #4caf50;
+  }
+  
+  /* =========================================================
+     RESPONSIVE
+     ========================================================= */
+  
+  @media (max-width: 1400px) {
+    .dashboard-main-content {
+      flex-direction: column;
+    }
+  
+    .video-panel,
+    .stats-panel {
+      flex: 1;
+      width: 100%;
+    }
+  
+    .stats-panel {
+      flex-direction: row;
+    }
+  
+    .stats-container,
+    .events-container {
+      flex: 1;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .dashboard-header {
+      flex-direction: column;
+      gap: 15px;
+      align-items: flex-start;
+    }
+  
+    .stats-panel {
+      flex-direction: column;
+    }
+  
+    .modal-body {
+      flex-direction: column;
+    }
+  
+    .video-controls {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  
+    .video-controls > div {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+  
+    .video-header {
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-start;
+    }
+  
+    .stats-content {
+      flex-direction: column;
+    }
+  
+    .stat-card {
+      flex: 1;
+    }
+  }
+  

@@ -1,4 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
+import TopNav from "../components/TopNav";
+import "../styles/account.css";
 
 const Account = () => {
     // Состояние профиля пользователя
@@ -145,10 +148,19 @@ const Account = () => {
         })));
     }, []);
 
+    // Эффект для добавления класса странице
+    useEffect(() => {
+        document.body.classList.add("account-page");
+        return () => document.body.classList.remove("account-page");
+    }, []);
+
     // Функция отображения уведомлений
     const showNotification = (message, type) => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 3000);
+        setNotification({ message, type, show: true });
+        setTimeout(() => {
+            setNotification(prev => prev ? { ...prev, show: false } : null);
+            setTimeout(() => setNotification(null), 300);
+        }, 3000);
     };
 
     // Обработка быстрых действий
@@ -200,11 +212,6 @@ const Account = () => {
     // Отложить задачу
     const deferTask = (taskId) => {
         showNotification('Задача отложена на завтра', 'info');
-    };
-
-    // Начать обучение
-    const startTraining = () => {
-        showNotification('Обучение начато. Удачи!', 'success');
     };
 
     // Подтверждение начала смены
@@ -280,149 +287,86 @@ const Account = () => {
         }
     };
 
-    // Получение цвета статуса сертификата
-    const getCertificateStatusColor = (status) => {
-        switch(status) {
-            case 'completed': return '#4CAF50';
-            case 'in-progress': return '#ff9800';
-            case 'expired': return '#f44336';
-            default: return '#8fb4d9';
-        }
-    };
-
-    // Получение текста статуса сертификата
-    const getCertificateStatusText = (status) => {
-        switch(status) {
-            case 'completed': return 'Активен';
-            case 'in-progress': return 'Требует продления';
-            case 'expired': return 'Истек';
-            default: return 'Неизвестно';
-        }
-    };
-
-    // Получение цвета достижения
-    const getAchievementClass = (type) => {
-        switch(type) {
-            case 'gold': return 'badge-gold';
-            case 'silver': return 'badge-silver';
-            case 'bronze': return 'badge-bronze';
-            case 'blue': return 'badge-blue';
-            default: return '';
-        }
-    };
-
     return (
-        <div className="container">
+        <div className="account-container">
             {/* Уведомление */}
             {notification && (
-                <div className={`notification ${notification.type}`}>
-                    {notification.message}
+                <div className={`account-notification ${notification.type} ${notification.show ? 'show' : ''}`}>
+                    <i className={`fas ${
+                        notification.type === 'success' ? 'fa-check-circle' : 
+                        notification.type === 'error' ? 'fa-exclamation-circle' : 
+                        'fa-info-circle'
+                    }`}></i>
+                    <div className="account-notification-message">{notification.message}</div>
                 </div>
             )}
 
             {/* Шапка */}
-            <div className="header">
-                <div className="logo-section">
-                    <div className="logo-icon">
-                        <i className="fas fa-industry"></i>
-                    </div>
-                    <div className="logo-text">
-                        <h1>Metal Inspect</h1>
-                        <div className="subtitle">Система распознавания трещин в слитках • Личный кабинет</div>
-                    </div>
-                </div>
-                
-                <div className="nav-buttons">
-                    <a href="/dashboard" className="nav-btn">
-                        <i className="fas fa-tachometer-alt"></i> Главный экран
-                    </a>
-                    <a href="/ai-panel" className="nav-btn">
-                        <i className="fas fa-chart-pie"></i> Статистика
-                    </a>
-                    <a href="/journal" className="nav-btn">
-                        <i className="fas fa-history"></i> Мои действия
-                    </a>
-                    <a href="/account" className="nav-btn active">
-                        <i className="fas fa-user"></i> Личный кабинет
-                    </a>
-                </div>
-                
-                <div className="user-info">
-                    <div className="user-avatar">
-                        <i className="fas fa-user"></i>
-                    </div>
-                    <div>
-                        <div className="user-name">{profile.name}</div>
-                        <div className="user-role">Оператор контроля качества • Смена #3</div>
-                    </div>
-                </div>
-            </div>
-            
+            <TopNav
+                subtitle="Система распознавания трещин в слитках • Личный кабинет"
+                userName={profile.name}
+                userRole="Оператор контроля качества • Смена #3"
+            />
+                            
             {/* Основное содержимое */}
-            <div className="main-content">
+            <div className="account-main-content">
                 {/* Боковая панель профиля */}
-                <div className="profile-sidebar">
+                <div className="account-profile-sidebar">
                     {/* Карточка профиля */}
-                    <div className="profile-card">
-                        <div className="profile-header">
-                            <div className="avatar-status">
-                                <div 
-                                    className="profile-avatar"
-                                    onClick={toggleStatus}
-                                    style={{ cursor: 'pointer' }}
-                                >
+                    <div className="account-profile-card">
+                        <div className="account-profile-header">
+                            <div 
+                                className="account-avatar-wrapper"
+                                onClick={toggleStatus}
+                            >
+                                <div className="account-profile-avatar">
                                     <i className="fas fa-user-tie"></i>
                                 </div>
-                                <div className={`status-indicator status-${profile.avatarStatus}`}></div>
+                                <div className={`account-status-indicator account-status-${profile.avatarStatus}`}></div>
                             </div>
-                            <div className="profile-name">{profile.shortName}</div>
-                            <div className="profile-role">{profile.role}</div>
-                            <div className="profile-status">{profile.status}</div>
+                            <div className="account-profile-name">{profile.shortName}</div>
+                            <div className="account-profile-role">{profile.role}</div>
+                            <div className="account-profile-status">{profile.status}</div>
                         </div>
-                        <div className="profile-details">
-                            <div className="detail-row">
-                                <div className="detail-label">
+                        <div className="account-profile-details">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-id-badge"></i>
                                     <span>Табельный номер:</span>
                                 </div>
-                                <div className="detail-value">{profile.employeeId}</div>
+                                <div className="account-detail-value">{profile.employeeId}</div>
                             </div>
-                            <div className="detail-row">
-                                <div className="detail-label">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-building"></i>
                                     <span>Подразделение:</span>
                                 </div>
-                                <div className="detail-value">{profile.department}</div>
+                                <div className="account-detail-value">{profile.department}</div>
                             </div>
-                            <div className="detail-row">
-                                <div className="detail-label">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-user-clock"></i>
                                     <span>Смена:</span>
                                 </div>
-                                <div className="detail-value">{profile.shift}</div>
+                                <div className="account-detail-value">{profile.shift}</div>
                             </div>
-                            <div className="detail-row">
-                                <div className="detail-label">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-calendar-alt"></i>
                                     <span>В компании:</span>
                                 </div>
-                                <div className="detail-value">{profile.tenure}</div>
+                                <div className="account-detail-value">{profile.tenure}</div>
                             </div>
-                            <div className="detail-row">
-                                <div className="detail-label">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-envelope"></i>
                                     <span>Email:</span>
                                 </div>
                                 <div 
-                                    className="detail-value editable"
-                                    onDoubleClick={(e) => {
-                                        e.currentTarget.contentEditable = true;
-                                        e.currentTarget.focus();
-                                    }}
-                                    onBlur={(e) => {
-                                        e.currentTarget.contentEditable = false;
-                                        updateProfileField('email', e.currentTarget.textContent);
-                                    }}
+                                    className="account-detail-value account-editable-field"
+                                    contentEditable
+                                    suppressContentEditableWarning
+                                    onBlur={(e) => updateProfileField('email', e.currentTarget.textContent)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -433,21 +377,16 @@ const Account = () => {
                                     {profile.email}
                                 </div>
                             </div>
-                            <div className="detail-row">
-                                <div className="detail-label">
+                            <div className="account-detail-row">
+                                <div className="account-detail-label">
                                     <i className="fas fa-phone"></i>
                                     <span>Телефон:</span>
                                 </div>
                                 <div 
-                                    className="detail-value editable"
-                                    onDoubleClick={(e) => {
-                                        e.currentTarget.contentEditable = true;
-                                        e.currentTarget.focus();
-                                    }}
-                                    onBlur={(e) => {
-                                        e.currentTarget.contentEditable = false;
-                                        updateProfileField('phone', e.currentTarget.textContent);
-                                    }}
+                                    className="account-detail-value account-editable-field"
+                                    contentEditable
+                                    suppressContentEditableWarning
+                                    onBlur={(e) => updateProfileField('phone', e.currentTarget.textContent)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -462,105 +401,103 @@ const Account = () => {
                     </div>
                     
                     {/* Быстрые действия */}
-                    <div className="quick-actions">
-                        <div className="actions-header">
+                    <div className="account-quick-actions">
+                        <div className="account-actions-header">
                             <h2><i className="fas fa-bolt"></i> Быстрые действия</h2>
                         </div>
-                        <div className="actions-content">
+                        <div className="account-actions-grid">
                             {quickActions.map(action => (
-                                <a 
+                                <button 
                                     key={action.id}
-                                    href="#" 
-                                    className="action-btn"
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        handleQuickAction(action.id);
-                                    }}
+                                    className="account-action-button"
+                                    onClick={() => handleQuickAction(action.id)}
                                 >
-                                    <div className="action-icon">
+                                    <div className="account-action-icon">
                                         <i className={action.icon}></i>
                                     </div>
-                                    <div className="action-label">{action.label}</div>
-                                </a>
+                                    <div className="account-action-label">{action.label}</div>
+                                </button>
                             ))}
                         </div>
                     </div>
                 </div>
                 
                 {/* Основная панель кабинета */}
-                <div className="dashboard-main">
+                <div className="account-dashboard-main">
                     {/* Приветственная панель */}
-                    <div className="welcome-panel">
-                        <div className="welcome-header">
-                            <div className="welcome-title">
+                    <div className="account-welcome-panel">
+                        <div className="account-welcome-header">
+                            <div className="account-welcome-title">
                                 <i className="fas fa-hand-sparkles"></i>
                                 Добро пожаловать, Алексей!
                             </div>
-                            <div className="welcome-message">
+                            <div className="account-welcome-message">
                                 Ваша текущая смена началась в 14:00. За сегодня вы проверили {welcomeStats.checkedToday} слитков и обнаружили {welcomeStats.defectsToday} дефект. 
                                 Продолжайте в том же духе!
                             </div>
                         </div>
-                        <div className="welcome-stats">
-                            <div className="welcome-stat">
-                                <div className="stat-number">{welcomeStats.checkedToday}</div>
-                                <div className="stat-text">Проверено сегодня</div>
+                        <div className="account-welcome-stats">
+                            <div className="account-welcome-stat">
+                                <div className="account-stat-number">{welcomeStats.checkedToday}</div>
+                                <div className="account-stat-text">Проверено сегодня</div>
                             </div>
-                            <div className="welcome-stat">
-                                <div className="stat-number">{welcomeStats.defectsToday}</div>
-                                <div className="stat-text">Дефектов обнаружено</div>
+                            <div className="account-welcome-stat">
+                                <div className="account-stat-number">{welcomeStats.defectsToday}</div>
+                                <div className="account-stat-text">Дефектов обнаружено</div>
                             </div>
-                            <div className="welcome-stat">
-                                <div className="stat-number">{welcomeStats.timeLeft}</div>
-                                <div className="stat-text">Осталось до конца смены</div>
+                            <div className="account-welcome-stat">
+                                <div className="account-stat-number">{welcomeStats.timeLeft}</div>
+                                <div className="account-stat-text">Осталось до конца смены</div>
                             </div>
                         </div>
                     </div>
                     
                     {/* Основные разделы кабинета */}
-                    <div className="dashboard-sections">
+                    <div className="account-dashboard-sections">
                         {/* Мои задачи */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
+                        <div className="account-dashboard-section">
+                            <div className="account-section-header">
                                 <h2><i className="fas fa-tasks"></i> Мои задачи</h2>
-                                <a href="#" className="section-link">Все задачи →</a>
+                                <a href="#" className="account-section-link">Все задачи →</a>
                             </div>
-                            <div className="section-content">
-                                <div className="tasks-list">
+                            <div className="account-section-content">
+                                <div className="account-tasks-list">
                                     {tasks.filter(task => !task.completed).map(task => (
                                         <div 
                                             key={task.id}
-                                            className={`task-item task-${task.priority}`}
-                                            style={{ 
-                                                opacity: task.completed ? 0.5 : 1,
-                                                display: task.completed ? 'none' : 'block'
-                                            }}
+                                            className={`account-task-item account-task-${task.priority}`}
+                                            style={{ display: task.completed ? 'none' : 'block' }}
                                         >
-                                            <div className="task-header">
-                                                <div className="task-title">{task.title}</div>
+                                            <div className="account-task-header">
+                                                <div className="account-task-title">{task.title}</div>
                                                 <div 
-                                                    className="task-priority"
+                                                    className="account-task-priority"
                                                     style={{ color: getTaskPriorityColor(task.priority) }}
                                                 >
                                                     {getTaskPriorityText(task.priority)}
                                                 </div>
                                             </div>
-                                            <div className="task-description">
+                                            <div className="account-task-description">
                                                 {task.description}
                                             </div>
-                                            <div className="task-footer">
-                                                <div className="task-date">{task.dueDate}</div>
-                                                <div className="task-actions">
+                                            <div className="account-task-footer">
+                                                <div className="account-task-date">
+                                                    <i className="fas fa-clock"></i>
+                                                    {task.dueDate}
+                                                </div>
+                                                <div className="account-task-actions">
                                                     <button 
-                                                        className="task-btn"
+                                                        className="account-task-button"
                                                         onClick={() => completeTask(task.id)}
                                                     >
+                                                        <i className="fas fa-check"></i>
                                                         Выполнено
                                                     </button>
                                                     <button 
-                                                        className="task-btn"
+                                                        className="account-task-button"
                                                         onClick={() => deferTask(task.id)}
                                                     >
+                                                        <i className="fas fa-clock"></i>
                                                         Отложить
                                                     </button>
                                                 </div>
@@ -569,13 +506,8 @@ const Account = () => {
                                     ))}
                                     
                                     {tasks.every(task => task.completed) && (
-                                        <div style={{ 
-                                            textAlign: 'center', 
-                                            padding: '30px', 
-                                            color: '#8fb4d9',
-                                            fontStyle: 'italic' 
-                                        }}>
-                                            <i className="fas fa-check-circle" style={{ fontSize: '2rem', marginBottom: '15px', display: 'block', color: '#4CAF50' }}></i>
+                                        <div className="account-empty-state">
+                                            <i className="fas fa-check-circle"></i>
                                             Все задачи выполнены! Отличная работа!
                                         </div>
                                     )}
@@ -584,12 +516,12 @@ const Account = () => {
                         </div>
                         
                         {/* График работы */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
+                        <div className="account-dashboard-section">
+                            <div className="account-section-header">
                                 <h2><i className="fas fa-calendar-alt"></i> Мой график</h2>
-                                <a href="#" className="section-link">Полный график →</a>
+                                <a href="#" className="account-section-link">Полный график →</a>
                             </div>
-                            <div className="section-content">
+                            <div className="account-section-content">
                                 <div style={{ color: '#b0c4de', marginBottom: '15px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
                                         <i className="fas fa-user-clock" style={{ color: '#4dabf7' }}></i>
@@ -600,46 +532,27 @@ const Account = () => {
                                     </div>
                                 </div>
                                 
-                                <div className="schedule-container">
-                                    <div className="schedule-grid">
+                                <div className="account-schedule-container">
+                                    <div className="account-schedule-grid">
                                         {schedule.map((day, index) => (
                                             <div 
                                                 key={index}
-                                                style={{ 
-                                                    display: 'flex', 
-                                                    flexDirection: 'column', 
-                                                    alignItems: 'center',
-                                                    flex: '1'
-                                                }}
+                                                className={`account-schedule-day ${day.current ? 'account-schedule-current' : ''}`}
                                                 onClick={() => showDayDetails(index, day.day, day.hours)}
                                             >
                                                 <div 
-                                                    className="schedule-bar"
+                                                    className="account-schedule-bar"
                                                     style={{ 
-                                                        height: `${day.hours * 20}px`,
-                                                        backgroundColor: day.current 
-                                                            ? 'rgba(77, 171, 247, 0.7)' 
-                                                            : day.hours > 0 
-                                                                ? 'rgba(60, 120, 180, 0.5)' 
-                                                                : 'rgba(40, 60, 85, 0.5)',
-                                                        boxShadow: day.current ? '0 0 10px rgba(77, 171, 247, 0.5)' : 'none',
-                                                        cursor: 'pointer'
+                                                        height: `${Math.max(day.hours * 15, 10)}px`
                                                     }}
                                                 >
-                                                    <div style={{
-                                                        position: 'absolute',
-                                                        top: '-20px',
-                                                        left: 0,
-                                                        width: '100%',
-                                                        textAlign: 'center',
-                                                        color: day.hours > 0 ? '#4dabf7' : '#8fb4d9',
-                                                        fontSize: '0.8rem',
-                                                        fontWeight: '600'
-                                                    }}>
-                                                        {day.hours > 0 ? `${day.hours}ч` : 'Вых'}
-                                                    </div>
+                                                    {day.hours > 0 && (
+                                                        <div className="account-hours-label">
+                                                            {day.hours}ч
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="schedule-label">
+                                                <div className="account-schedule-label">
                                                     {day.day}
                                                 </div>
                                             </div>
@@ -647,60 +560,73 @@ const Account = () => {
                                     </div>
                                 </div>
                                 
-                                <div style={{ marginTop: '25px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                        <span style={{ color: '#b0c4de' }}>Отработано в этом месяце:</span>
-                                        <span style={{ color: '#4dabf7', fontWeight: '600' }}>112 часов</span>
+                                <div className="account-work-info">
+                                    <div className="account-info-row">
+                                        <div className="account-info-label">
+                                            <i className="fas fa-chart-line"></i>
+                                            <span>Отработано в этом месяце:</span>
+                                        </div>
+                                        <div className="account-info-value">112 часов</div>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                        <span style={{ color: '#b0c4de' }}>Осталось отпускных дней:</span>
-                                        <span style={{ color: '#4CAF50', fontWeight: '600' }}>14 дней</span>
+                                    <div className="account-info-row">
+                                        <div className="account-info-label">
+                                            <i className="fas fa-umbrella-beach"></i>
+                                            <span>Осталось отпускных дней:</span>
+                                        </div>
+                                        <div className="account-info-value vacation">14 дней</div>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span style={{ color: '#b0c4de' }}>Следующий выходной:</span>
-                                        <span style={{ color: '#ff9800', fontWeight: '600' }}>18 июня (воскресенье)</span>
+                                    <div className="account-info-row">
+                                        <div className="account-info-label">
+                                            <i className="fas fa-calendar-day"></i>
+                                            <span>Следующий выходной:</span>
+                                        </div>
+                                        <div className="account-info-value next-dayoff">18 июня (воскресенье)</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
                         {/* Моя статистика */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
+                        <div className="account-dashboard-section">
+                            <div className="account-section-header">
                                 <h2><i className="fas fa-chart-line"></i> Моя статистика</h2>
-                                <a href="#" className="section-link">Подробнее →</a>
+                                <a href="#" className="account-section-link">Подробнее →</a>
                             </div>
-                            <div className="section-content">
-                                <div className="personal-stats">
-                                    <div className="personal-stat">
-                                        <div className="personal-value">{personalStats.accuracy.toFixed(1)}%</div>
-                                        <div className="personal-label">Точность обнаружения</div>
-                                        <div style={{ color: '#4CAF50', fontSize: '0.85rem', marginTop: '5px' }}>
-                                            <i className="fas fa-arrow-up"></i> +0.5% за месяц
+                            <div className="account-section-content">
+                                <div className="account-personal-stats">
+                                    <div className="account-personal-stat">
+                                        <div className="account-personal-value">{personalStats.accuracy.toFixed(1)}%</div>
+                                        <div className="account-personal-label">Точность обнаружения</div>
+                                        <div className="account-personal-trend account-trend-up">
+                                            <i className="fas fa-arrow-up"></i>
+                                            +0.5% за месяц
                                         </div>
                                     </div>
                                     
-                                    <div className="personal-stat">
-                                        <div className="personal-value">{personalStats.checkedTotal.toLocaleString()}</div>
-                                        <div className="personal-label">Проверено слитков</div>
-                                        <div style={{ color: '#4CAF50', fontSize: '0.85rem', marginTop: '5px' }}>
-                                            <i className="fas fa-arrow-up"></i> +127 за неделю
+                                    <div className="account-personal-stat">
+                                        <div className="account-personal-value">{personalStats.checkedTotal.toLocaleString()}</div>
+                                        <div className="account-personal-label">Проверено слитков</div>
+                                        <div className="account-personal-trend account-trend-up">
+                                            <i className="fas fa-arrow-up"></i>
+                                            +127 за неделю
                                         </div>
                                     </div>
                                     
-                                    <div className="personal-stat">
-                                        <div className="personal-value">{personalStats.defectsFound}</div>
-                                        <div className="personal-label">Обнаружено дефектов</div>
-                                        <div style={{ color: '#f44336', fontSize: '0.85rem', marginTop: '5px' }}>
-                                            <i className="fas fa-arrow-down"></i> -3 за месяц
+                                    <div className="account-personal-stat">
+                                        <div className="account-personal-value">{personalStats.defectsFound}</div>
+                                        <div className="account-personal-label">Обнаружено дефектов</div>
+                                        <div className="account-personal-trend account-trend-down">
+                                            <i className="fas fa-arrow-down"></i>
+                                            -3 за месяц
                                         </div>
                                     </div>
                                     
-                                    <div className="personal-stat">
-                                        <div className="personal-value">{personalStats.rating.toFixed(1)}</div>
-                                        <div className="personal-label">Средний рейтинг</div>
-                                        <div style={{ color: '#ff9800', fontSize: '0.85rem', marginTop: '5px' }}>
-                                            <i className="fas fa-star"></i> из 5
+                                    <div className="account-personal-stat">
+                                        <div className="account-personal-value">{personalStats.rating.toFixed(1)}</div>
+                                        <div className="account-personal-label">Средний рейтинг</div>
+                                        <div className="account-personal-trend">
+                                            <i className="fas fa-star"></i>
+                                            из 5
                                         </div>
                                     </div>
                                 </div>
@@ -710,17 +636,14 @@ const Account = () => {
                                         <i className="fas fa-award" style={{ color: '#FFD700', marginRight: '8px' }}></i>
                                         <span>Достижения за этот месяц:</span>
                                     </div>
-                                    <div className="badges-container">
+                                    <div className="account-achievements-container">
                                         {achievements.map((achievement, index) => (
                                             <div 
                                                 key={index}
-                                                className={`badge ${getAchievementClass(achievement.type)}`}
+                                                className={`account-achievement-badge account-badge-${achievement.type}`}
                                                 title={`${achievement.type.charAt(0).toUpperCase() + achievement.type.slice(1)} ${achievement.name}`}
                                             >
-                                                <i 
-                                                    className={achievement.icon} 
-                                                    style={{ fontSize: '1.2rem', marginBottom: '5px' }}
-                                                ></i>
+                                                <i className={achievement.icon}></i>
                                                 <span>{achievement.name}</span>
                                             </div>
                                         ))}
@@ -730,58 +653,61 @@ const Account = () => {
                         </div>
                         
                         {/* Обучение и уведомления */}
-                        <div className="dashboard-section">
-                            <div className="section-header">
+                        <div className="account-dashboard-section">
+                            <div className="account-section-header">
                                 <h2><i className="fas fa-bell"></i> Уведомления и обучение</h2>
-                                <a href="#" className="section-link">Все уведомления →</a>
+                                <a href="#" className="account-section-link">Все уведомления →</a>
                             </div>
-                            <div className="section-content">
-                                <div className="notifications-list">
+                            <div className="account-section-content">
+                                <div className="account-notifications-list">
                                     {notifications.map(notif => (
                                         <div 
                                             key={notif.id}
-                                            className={`notification-item ${!notif.read ? 'unread' : ''}`}
+                                            className={`account-notification-item ${!notif.read ? 'account-notification-unread' : ''}`}
                                             onClick={() => {
                                                 setNotifications(prev => prev.map(n => 
                                                     n.id === notif.id ? { ...n, read: true } : n
                                                 ));
                                             }}
                                         >
-                                            <div className="notification-icon">
+                                            <div className="account-notification-icon">
                                                 <i className={notif.icon}></i>
                                             </div>
-                                            <div className="notification-info">
-                                                <div className="notification-title">{notif.title}</div>
-                                                <div className="notification-message">
+                                            <div className="account-notification-info">
+                                                <div className="account-notification-title">{notif.title}</div>
+                                                <div className="account-notification-message">
                                                     {notif.message}
                                                 </div>
-                                                <div className="notification-time">{notif.time}</div>
+                                                <div className="account-notification-time">
+                                                    <i className="fas fa-clock"></i>
+                                                    {notif.time}
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                                 
                                 <div style={{ marginTop: '25px' }}>
-                                    <div className="section-header" style={{ background: 'none', padding: 0, borderBottom: '1px solid rgba(60, 120, 180, 0.2)', marginBottom: '15px' }}>
+                                    <div className="account-section-header" style={{ background: 'none', padding: 0, borderBottom: '1px solid rgba(60, 120, 180, 0.2)', marginBottom: '15px' }}>
                                         <h2 style={{ fontSize: '1.1rem' }}><i className="fas fa-certificate"></i> Мои сертификаты</h2>
                                     </div>
                                     
-                                    <div className="certificates-list">
+                                    <div className="account-certificates-list">
                                         {certificates.map(cert => (
-                                            <div key={cert.id} className="certificate-item">
-                                                <div className="certificate-icon">
+                                            <div key={cert.id} className="account-certificate-item">
+                                                <div className="account-certificate-icon">
                                                     <i className={cert.icon}></i>
                                                 </div>
-                                                <div className="certificate-info">
-                                                    <div className="certificate-name">{cert.name}</div>
-                                                    <div className="certificate-details">
-                                                        Выдан: {cert.issued} • Действует до: {cert.validUntil}
+                                                <div className="account-certificate-info">
+                                                    <div className="account-certificate-name">{cert.name}</div>
+                                                    <div className="account-certificate-details">
+                                                        <span>Выдан: {cert.issued}</span>
+                                                        <span>Действует до: {cert.validUntil}</span>
                                                     </div>
-                                                    <div 
-                                                        className={`certificate-status status-${cert.status}`}
-                                                        style={{ color: getCertificateStatusColor(cert.status) }}
-                                                    >
-                                                        {getCertificateStatusText(cert.status)}
+                                                    <div className={`account-certificate-status account-status-${cert.status}`}>
+                                                        {cert.status === 'completed' ? 'Активен' : 
+                                                         cert.status === 'in-progress' ? 'Требует продления' : 
+                                                         'Истек'}
                                                     </div>
                                                 </div>
                                             </div>
@@ -793,22 +719,20 @@ const Account = () => {
                     </div>
                 </div>
             </div>
-     
 
-        {/* Модальное окно начала смены */}
-        {shiftModalOpen && (
-            <div className="modal-overlay" onClick={() => setShiftModalOpen(false)}>
-                <div className="modal-content" onClick={e => e.stopPropagation()}>
-                    <div className="modal-header">
+            {/* Модальное окно начала смены */}
+            <div className={`account-modal-overlay ${shiftModalOpen ? 'show' : ''}`} onClick={() => setShiftModalOpen(false)}>
+                <div className="account-modal-content" onClick={e => e.stopPropagation()}>
+                    <div className="account-modal-header">
                         <h3><i className="fas fa-play-circle"></i> Начало смены</h3>
                         <button 
-                            className="close-modal"
+                            className="account-modal-close"
                             onClick={() => setShiftModalOpen(false)}
                         >
                             &times;
                         </button>
                     </div>
-                    <div className="modal-body">
+                    <div className="account-modal-body">
                         <div style={{ textAlign: 'center', padding: '20px' }}>
                             <i className="fas fa-user-check" style={{ fontSize: '3rem', color: '#4dabf7', marginBottom: '20px' }}></i>
                             <h3 style={{ color: '#e0e0e0', marginBottom: '15px' }}>Подтверждение начала смены</h3>
@@ -837,24 +761,25 @@ const Account = () => {
                             </div>
                         </div>
                     </div>
-                    <div style={{ padding: '20px', borderTop: '1px solid rgba(60, 120, 180, 0.2)', display: 'flex', gap: '15px' }}>
+                    <div className="account-modal-footer">
                         <button 
-                            className="settings-btn secondary"
+                            className="account-modal-button account-modal-secondary"
                             onClick={() => setShiftModalOpen(false)}
                         >
+                            <i className="fas fa-times"></i>
                             Отмена
                         </button>
                         <button 
-                            className="settings-btn primary"
+                            className="account-modal-button account-modal-primary"
                             onClick={confirmShift}
                         >
+                            <i className="fas fa-play"></i>
                             Начать смену
                         </button>
                     </div>
                 </div>
             </div>
-        )}
-    </div>
+        </div>
     );
 };
 

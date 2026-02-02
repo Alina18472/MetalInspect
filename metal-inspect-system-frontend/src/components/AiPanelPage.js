@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/ai_panel.css';
+import TopNav from "../components/TopNav";
 
 const AiPanel = () => {
     // Состояние для метрик
@@ -102,7 +103,11 @@ const AiPanel = () => {
         const data = rangeData[timeRange] || rangeData.week;
         setMetrics(data);
     }, [timeRange]);
-
+    useEffect(() => {
+        document.body.classList.add("ai-panel-page");
+        return () => document.body.classList.remove("ai-panel-page");
+      }, []);
+      
     // Эффект для имитации обновления метрик в реальном времени
     useEffect(() => {
         const interval = setInterval(() => {
@@ -275,43 +280,14 @@ const AiPanel = () => {
     return (
         <div className="container">
             {/* Шапка */}
-            <div className="header">
-                <div className="logo-section">
-                    <div className="logo-icon">
-                        <i className="fas fa-industry"></i>
-                    </div>
-                    <div className="logo-text">
-                        <h1>Metal Inspect</h1>
-                        <div className="subtitle">Система распознавания трещин в слитках • Мониторинг эффективности ИИ</div>
-                    </div>
-                </div>
-                
-                <div className="nav-buttons">
-                    <a href="/dashboard" className="nav-btn">
-                        <i className="fas fa-tachometer-alt"></i> Главный экран
-                    </a>
-                    <a href="/journal" className="nav-btn">
-                        <i className="fas fa-history"></i> Журнал событий
-                    </a>
-                    <a href="/settings" className="nav-btn">
-                        <i className="fas fa-sliders-h"></i> Настройки
-                    </a>
-                    <a href="/ai-panel" className="nav-btn active">
-                        <i className="fas fa-chart-line"></i> Эффективность ИИ
-                    </a>
-                </div>
-                
-                <div className="user-info">
-                    <div className="user-avatar">
-                        <i className="fas fa-chart-bar"></i>
-                    </div>
-                    <div>
-                        <div className="user-name">Аналитик Петрова Е.В.</div>
-                        <div className="user-role">Уровень доступа: Аналитик</div>
-                    </div>
-                </div>
-            </div>
-            
+            <TopNav
+  subtitle="Система распознавания трещин в слитках • Журнал событий и отчетность"
+  userName="Оператор Иванов А.С."
+  userRole="Смена #3 • 08:00-20:00"
+/>
+
+
+                            
             {/* Основное содержимое */}
             <div className="main-content">
                 {/* Верхняя панель с ключевыми метриками */}
