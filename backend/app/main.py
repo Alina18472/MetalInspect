@@ -1,11 +1,13 @@
+
+# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.users import router as users_router  # NEW
 
 app = FastAPI()
 
-# 1) СНАЧАЛА CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -14,5 +16,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2) ПОТОМ роутеры
 app.include_router(auth_router)
+app.include_router(users_router)  # NEW

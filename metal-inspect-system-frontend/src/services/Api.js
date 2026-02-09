@@ -1,3 +1,4 @@
+
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";
 
 function getToken() {
@@ -47,7 +48,12 @@ export const api = {
       body: { email, password },
     }),
 
-  // примеры будущих запросов
+  // NEW:
+  getMe: () => request("/users/me", { method: "GET" }),
+
+  // NEW: только для админа
+  getUsers: () => request("/users", { method: "GET" }),
+
   getDashboard: () => request("/dashboard", { method: "GET" }),
 };
 
