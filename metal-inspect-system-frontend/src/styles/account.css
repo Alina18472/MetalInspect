@@ -1481,3 +1481,127 @@
     margin-bottom: 10px;
     opacity: 0.5;
 }
+/* ===== PATCH: форма профиля (инпуты/кнопки) чтобы ничего не перекрывалось ===== */
+
+/* 1) Строки профиля: разрешаем перенос и не даём value вылезать */
+.account-detail-row {
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;       /* важно: на узких местах переносит value вниз */
+  }
+  
+  /* Hover у тебя меняет padding и "скачет" layout -> лучше без изменения padding */
+  .account-detail-row:hover {
+    padding: 12px 0;       /* оставляем исходный padding */
+    border-radius: 0;      /* можно оставить, чтобы не прыгало */
+  }
+  
+  /* 2) label/value: делаем value гибким и разрешаем сжиматься */
+  .account-detail-label {
+    flex: 0 0 auto;
+    min-width: 120px;      /* чтобы было аккуратно */
+  }
+  
+  .account-detail-value {
+    flex: 1 1 auto;        /* занимает всё оставшееся */
+    min-width: 0;          /* критично для flex, чтобы текст/инпуты не вылезали */
+    max-width: none;       /* убираем ограничение 60% */
+    text-align: left;      /* для инпутов/кнопок лучше слева */
+  }
+  
+  /* 3) Инпуты в профиле */
+  .account-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 38px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(60, 120, 180, 0.35);
+    background: rgba(30, 45, 65, 0.55);
+    color: #e0e0e0;
+    outline: none;
+  }
+  
+  .account-input:focus {
+    border-color: rgba(77, 171, 247, 0.7);
+    box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.15);
+    background: rgba(30, 45, 65, 0.7);
+  }
+  
+  /* Чтобы браузерное автозаполнение не делало белый фон */
+  .account-input:-webkit-autofill,
+  .account-input:-webkit-autofill:hover,
+  .account-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #e0e0e0;
+    -webkit-box-shadow: 0 0 0px 1000px rgba(30, 45, 65, 0.9) inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+  
+  /* 4) Кнопки под профилем */
+  .account-save-button {
+    border: none;
+    cursor: pointer;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+    background: rgba(30, 90, 160, 0.25);
+    border: 1px solid rgba(77, 171, 247, 0.35);
+    transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  
+  .account-save-button:hover {
+    background: rgba(30, 90, 160, 0.35);
+    border-color: rgba(77, 171, 247, 0.55);
+    transform: translateY(-1px);
+  }
+  
+  .account-save-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  /* 5) Ошибка в карточке профиля */
+  .account-form-error {
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.35);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  
+  /* 6) Если хочешь сохранить правое выравнивание для "обычных" значений,
+     а не для инпутов — можно вернуть так: */
+  .account-detail-value:not(:has(input)) {
+    text-align: right;
+  }
+  .account-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(60, 120, 180, 0.35);
+    background: rgba(30, 45, 65, 0.55);
+    color: #e0e0e0;
+    outline: none;
+  }
+  
+  .account-input:focus {
+    border-color: rgba(77, 171, 247, 0.7);
+    box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.15);
+    background: rgba(30, 45, 65, 0.7);
+  }
+  
+  .account-form-error {
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.35);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #ff8a80;
+  }
+  

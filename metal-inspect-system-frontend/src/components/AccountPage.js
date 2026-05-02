@@ -1,11 +1,12 @@
 
+// AccountPage.js
 import React, { useState, useEffect, useMemo } from "react";
 import TopNav from "../components/TopNav";
 import "../styles/account.css";
 import { useAuth } from "../context/AuthContext";
 
 const Account = () => {
-  const { user, loadMe } = useAuth();
+  const { user, loadMe, updateMe } = useAuth();
 
   // UI-состояния, которые пока не в БД (можно потом привязать к API)
   const [statusState, setStatusState] = useState({
@@ -110,26 +111,42 @@ const Account = () => {
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  const quickActions = [
-    { id: "startShift", label: "Начать смену", icon: "fas fa-play-circle" },
-    { id: "reportIssue", label: "Сообщить о проблеме", icon: "fas fa-exclamation-triangle" },
-    { id: "requestLeave", label: "Заявка на отпуск", icon: "fas fa-calendar-plus" },
-    { id: "trainingMaterials", label: "Обучение", icon: "fas fa-graduation-cap" },
-    { id: "settings", label: "Настройки", icon: "fas fa-cog" },
-    { id: "help", label: "Помощь", icon: "fas fa-question-circle" },
-  ];
-
-  const achievements = [
-    { name: "Точность", icon: "fas fa-bullseye", type: "gold" },
-    { name: "Темп", icon: "fas fa-tachometer-alt", type: "silver" },
-    { name: "Качество", icon: "fas fa-star", type: "bronze" },
-    { name: "Эксперт", icon: "fas fa-graduation-cap", type: "blue" },
-  ];
+  // ==========================
+  // NEW: модалка редактирования профиля
+  // ==========================
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [edit, setEdit] = useState({
+    last_name: "",
+    first_name: "",
+    patronymic: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirmPassword: "",
+  });
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   // 1) Подтянуть профиль, если перезагрузка страницы и user пустой
   useEffect(() => {
     if (!user) loadMe();
   }, [user, loadMe]);
+
+  // NEW: подставить текущие данные в форму (и при открытии модалки)
+  useEffect(() => {
+    if (!user) return;
+    setEdit((p) => ({
+      ...p,
+      last_name: user.last_name || "",
+      first_name: user.first_name || "",
+      patronymic: user.patronymic || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      password: "",
+      confirmPassword: "",
+    }));
+    setFormError("");
+  }, [user, profileModalOpen]);
 
   // 2) Текущий день в графике
   useEffect(() => {
@@ -150,18 +167,15 @@ const Account = () => {
     return () => document.body.classList.remove("account-page");
   }, []);
 
-  // вычисляем отображаемые поля профиля из user
   const profile = useMemo(() => {
     const last = user?.last_name || "";
     const first = user?.first_name || "";
     const pat = user?.patronymic || "";
     const fullName = `${last} ${first} ${pat}`.trim() || user?.email || "Пользователь";
 
-    const shortName =
-      (last && first && `${last} ${first[0]}.` + (pat ? `${pat[0]}.` : "")) || fullName;
+    const shortName = (last && first && `${last} ${first[0]}.` + (pat ? `${pat[0]}.` : "")) || fullName;
 
-    const roleText =
-      user?.role_name || (user?.role_id === 1 ? "Администратор" : "Инженер");
+    const roleText = user?.role_id === 1 ? "Администратор" : "Инженер";
 
     return {
       name: fullName,
@@ -170,13 +184,9 @@ const Account = () => {
       email: user?.email || "",
       phone: user?.phone || "",
       is_active: user?.is_active ?? true,
-      // UI поля (пока не в БД)
       status: statusState.statusText,
       avatarStatus: statusState.avatarStatus,
       employeeId: `#${user?.id ?? "—"}`,
-      department: "—",
-      shift: "—",
-      tenure: "—",
     };
   }, [user, statusState]);
 
@@ -187,42 +197,6 @@ const Account = () => {
       setTimeout(() => setNotification(null), 300);
     }, 3000);
   };
-
-  const handleQuickAction = (actionId) => {
-    switch (actionId) {
-      case "startShift":
-        setShiftModalOpen(true);
-        break;
-      case "reportIssue":
-        showNotification("Открыта форма сообщения о проблеме", "info");
-        break;
-      case "requestLeave":
-        showNotification("Открыта форма заявки на отпуск", "info");
-        break;
-      case "trainingMaterials":
-        showNotification("Открыты материалы обучения", "info");
-        break;
-      case "settings":
-        showNotification("Открыты настройки профиля", "info");
-        break;
-      case "help":
-        showNotification("Открыт раздел помощи", "info");
-        break;
-      default:
-        break;
-    }
-  };
-
-  const completeTask = (taskId) => {
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, completed: true } : t)));
-
-    setWelcomeStats((prev) => ({ ...prev, checkedToday: prev.checkedToday + 1 }));
-    setPersonalStats((prev) => ({ ...prev, checkedTotal: prev.checkedTotal + 1 }));
-
-    showNotification("Задача отмечена как выполненная", "success");
-  };
-
-  const deferTask = () => showNotification("Задача отложена на завтра", "info");
 
   const confirmShift = () => {
     setStatusState({ statusText: "На смене", avatarStatus: "online" });
@@ -237,20 +211,82 @@ const Account = () => {
     showNotification(`Статус изменен на "${newText}"`, "info");
   };
 
-  // Важно: пока у тебя нет API для обновления профиля => редактирование сделаем визуальным
-  // (сохранение в БД добавим позже через PUT /users/me)
-  const updateProfileField = (field, value) => {
-    showNotification("Сохранение профиля пока не подключено к серверу", "info");
+  // ==========================
+  // NEW: сохранить профиль (PUT /users/me)
+  // ==========================
+  const saveProfile = async () => {
+    if (saving) return;
+    setFormError("");
+
+    const email = (edit.email || "").trim();
+    const phone = (edit.phone || "").trim();
+    const last_name = (edit.last_name || "").trim();
+    const first_name = (edit.first_name || "").trim();
+    const patronymic = (edit.patronymic || "").trim();
+
+    const pass = edit.password || "";
+    const conf = edit.confirmPassword || "";
+
+    if (!email) {
+      setFormError("Email обязателен");
+      return;
+    }
+
+    if (pass || conf) {
+      if (pass.length < 6) {
+        setFormError("Пароль должен быть не короче 6 символов");
+        return;
+      }
+      if (pass !== conf) {
+        setFormError("Пароли не совпадают");
+        return;
+      }
+    }
+
+    const payload = {
+      email,
+      phone: phone || null,
+      last_name: last_name || null,
+      first_name: first_name || null,
+      patronymic: patronymic || null,
+    };
+    if (pass) payload.password = pass;
+
+    setSaving(true);
+    try {
+      const res = await updateMe(payload);
+      if (!res?.ok) {
+        setFormError(res?.error || "Не удалось сохранить профиль");
+        return;
+      }
+      showNotification("Профиль обновлён", "success");
+      setProfileModalOpen(false);
+    } catch (e) {
+      setFormError(e?.message || "Ошибка сохранения профиля");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const closeProfileModal = () => {
+    if (saving) return;
+    setProfileModalOpen(false);
+    setFormError("");
+  };
+
+  const completeTask = (taskId) => {
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, completed: true } : t)));
+    setWelcomeStats((prev) => ({ ...prev, checkedToday: prev.checkedToday + 1 }));
+    setPersonalStats((prev) => ({ ...prev, checkedTotal: prev.checkedTotal + 1 }));
+    showNotification("Задача отмечена как выполненная", "success");
+  };
+
+  const deferTask = () => showNotification("Задача отложена на завтра", "info");
 
   const showDayDetails = (dayIndex, hours) => {
     const dayNames = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
     const fullDayName = dayNames[dayIndex];
-
-    const message = hours > 0
-      ? `${fullDayName}: рабочая смена ${hours} часов (14:00-22:00)`
-      : `${fullDayName}: выходной день`;
-
+    const message = hours > 0 ? `${fullDayName}: рабочая смена ${hours} часов (14:00-22:00)` : `${fullDayName}: выходной день`;
     showNotification(message, "info");
   };
 
@@ -280,7 +316,6 @@ const Account = () => {
     }
   };
 
-  // Пока профиль грузится
   if (!user) {
     return (
       <div className="account-container" style={{ padding: 24, color: "#b0c4de" }}>
@@ -306,17 +341,13 @@ const Account = () => {
         </div>
       )}
 
-      <TopNav
-        subtitle="Система распознавания трещин в слитках • Личный кабинет"
-        userName={profile.name}
-        userRole={profile.role}
-      />
+      <TopNav subtitle="Система распознавания трещин в слитках • Личный кабинет" userName={profile.name} userRole={profile.role} />
 
       <div className="account-main-content">
         <div className="account-profile-sidebar">
           <div className="account-profile-card">
             <div className="account-profile-header">
-              <div className="account-avatar-wrapper" onClick={toggleStatus}>
+              <div className="account-avatar-wrapper" onClick={toggleStatus} title="Клик — сменить статус (UI)">
                 <div className="account-profile-avatar">
                   <i className="fas fa-user-tie"></i>
                 </div>
@@ -341,20 +372,7 @@ const Account = () => {
                   <i className="fas fa-envelope"></i>
                   <span>Email:</span>
                 </div>
-                <div
-                  className="account-detail-value account-editable-field"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => updateProfileField("email", e.currentTarget.textContent)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {profile.email}
-                </div>
+                <div className="account-detail-value">{profile.email || "—"}</div>
               </div>
 
               <div className="account-detail-row">
@@ -362,20 +380,7 @@ const Account = () => {
                   <i className="fas fa-phone"></i>
                   <span>Телефон:</span>
                 </div>
-                <div
-                  className="account-detail-value account-editable-field"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => updateProfileField("phone", e.currentTarget.textContent)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                >
-                  {profile.phone || "—"}
-                </div>
+                <div className="account-detail-value">{profile.phone || "—"}</div>
               </div>
 
               <div className="account-detail-row">
@@ -385,30 +390,22 @@ const Account = () => {
                 </div>
                 <div className="account-detail-value">{profile.is_active ? "Активен" : "Неактивен"}</div>
               </div>
+
+              {/* ✅ КНОПКА НЕ В TOPNAV */}
+              <div style={{ marginTop: 14, display: "flex" }}>
+                <button
+                  className="account-modal-button account-modal-primary"
+                  style={{ width: "100%" }}
+                  onClick={() => setProfileModalOpen(true)}
+                >
+                  <i className="fas fa-user-edit"></i>
+                  Обновить профиль
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="account-quick-actions">
-            <div className="account-actions-header">
-              <h2>
-                <i className="fas fa-bolt"></i> Быстрые действия
-              </h2>
-            </div>
-            <div className="account-actions-grid">
-              {quickActions.map((action) => (
-                <button
-                  key={action.id}
-                  className="account-action-button"
-                  onClick={() => handleQuickAction(action.id)}
-                >
-                  <div className="account-action-icon">
-                    <i className={action.icon}></i>
-                  </div>
-                  <div className="account-action-label">{action.label}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Быстрые действия — можешь вернуть, если нужно */}
         </div>
 
         <div className="account-dashboard-main">
@@ -419,8 +416,7 @@ const Account = () => {
                 Добро пожаловать, {user?.first_name || "сотрудник"}!
               </div>
               <div className="account-welcome-message">
-                За сегодня вы проверили {welcomeStats.checkedToday} слитков и обнаружили{" "}
-                {welcomeStats.defectsToday} дефект.
+                За сегодня вы проверили {welcomeStats.checkedToday} слитков и обнаружили {welcomeStats.defectsToday} дефект.
               </div>
             </div>
             <div className="account-welcome-stats">
@@ -445,7 +441,7 @@ const Account = () => {
                 <h2>
                   <i className="fas fa-tasks"></i> Мои задачи
                 </h2>
-                <a href="#" className="account-section-link">
+                <a href="#" className="account-section-link" onClick={(e) => e.preventDefault()}>
                   Все задачи →
                 </a>
               </div>
@@ -454,17 +450,10 @@ const Account = () => {
                   {tasks
                     .filter((task) => !task.completed)
                     .map((task) => (
-                      <div
-                        key={task.id}
-                        className={`account-task-item account-task-${task.priority}`}
-                        style={{ display: task.completed ? "none" : "block" }}
-                      >
+                      <div key={task.id} className={`account-task-item account-task-${task.priority}`}>
                         <div className="account-task-header">
                           <div className="account-task-title">{task.title}</div>
-                          <div
-                            className="account-task-priority"
-                            style={{ color: getTaskPriorityColor(task.priority) }}
-                          >
+                          <div className="account-task-priority" style={{ color: getTaskPriorityColor(task.priority) }}>
                             {getTaskPriorityText(task.priority)}
                           </div>
                         </div>
@@ -476,12 +465,10 @@ const Account = () => {
                           </div>
                           <div className="account-task-actions">
                             <button className="account-task-button" onClick={() => completeTask(task.id)}>
-                              <i className="fas fa-check"></i>
-                              Выполнено
+                              <i className="fas fa-check"></i>Выполнено
                             </button>
                             <button className="account-task-button" onClick={() => deferTask(task.id)}>
-                              <i className="fas fa-clock"></i>
-                              Отложить
+                              <i className="fas fa-clock"></i>Отложить
                             </button>
                           </div>
                         </div>
@@ -503,7 +490,7 @@ const Account = () => {
                 <h2>
                   <i className="fas fa-calendar-alt"></i> Мой график
                 </h2>
-                <a href="#" className="account-section-link">
+                <a href="#" className="account-section-link" onClick={(e) => e.preventDefault()}>
                   Полный график →
                 </a>
               </div>
@@ -532,7 +519,7 @@ const Account = () => {
                 <h2>
                   <i className="fas fa-chart-line"></i> Моя статистика
                 </h2>
-                <a href="#" className="account-section-link">
+                <a href="#" className="account-section-link" onClick={(e) => e.preventDefault()}>
                   Подробнее →
                 </a>
               </div>
@@ -542,8 +529,7 @@ const Account = () => {
                     <div className="account-personal-value">{personalStats.accuracy.toFixed(1)}%</div>
                     <div className="account-personal-label">Точность обнаружения</div>
                     <div className="account-personal-trend account-trend-up">
-                      <i className="fas fa-arrow-up"></i>
-                      +0.5% за месяц
+                      <i className="fas fa-arrow-up"></i>+0.5% за месяц
                     </div>
                   </div>
 
@@ -551,8 +537,7 @@ const Account = () => {
                     <div className="account-personal-value">{personalStats.checkedTotal.toLocaleString()}</div>
                     <div className="account-personal-label">Проверено слитков</div>
                     <div className="account-personal-trend account-trend-up">
-                      <i className="fas fa-arrow-up"></i>
-                      +127 за неделю
+                      <i className="fas fa-arrow-up"></i>+127 за неделю
                     </div>
                   </div>
 
@@ -560,8 +545,7 @@ const Account = () => {
                     <div className="account-personal-value">{personalStats.defectsFound}</div>
                     <div className="account-personal-label">Обнаружено дефектов</div>
                     <div className="account-personal-trend account-trend-down">
-                      <i className="fas fa-arrow-down"></i>
-                      -3 за месяц
+                      <i className="fas fa-arrow-down"></i>-3 за месяц
                     </div>
                   </div>
 
@@ -569,28 +553,8 @@ const Account = () => {
                     <div className="account-personal-value">{personalStats.rating.toFixed(1)}</div>
                     <div className="account-personal-label">Средний рейтинг</div>
                     <div className="account-personal-trend">
-                      <i className="fas fa-star"></i>
-                      из 5
+                      <i className="fas fa-star"></i>из 5
                     </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "25px" }}>
-                  <div style={{ color: "#b0c4de", marginBottom: "10px" }}>
-                    <i className="fas fa-award" style={{ color: "#FFD700", marginRight: "8px" }}></i>
-                    <span>Достижения за этот месяц:</span>
-                  </div>
-                  <div className="account-achievements-container">
-                    {achievements.map((achievement, index) => (
-                      <div
-                        key={index}
-                        className={`account-achievement-badge account-badge-${achievement.type}`}
-                        title={`${achievement.type.charAt(0).toUpperCase() + achievement.type.slice(1)} ${achievement.name}`}
-                      >
-                        <i className={achievement.icon}></i>
-                        <span>{achievement.name}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -601,7 +565,7 @@ const Account = () => {
                 <h2>
                   <i className="fas fa-bell"></i> Уведомления и обучение
                 </h2>
-                <a href="#" className="account-section-link">
+                <a href="#" className="account-section-link" onClick={(e) => e.preventDefault()}>
                   Все уведомления →
                 </a>
               </div>
@@ -611,9 +575,7 @@ const Account = () => {
                     <div
                       key={notif.id}
                       className={`account-notification-item ${!notif.read ? "account-notification-unread" : ""}`}
-                      onClick={() => {
-                        setNotifications((prev) => prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-                      }}
+                      onClick={() => setNotifications((prev) => prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n)))}
                     >
                       <div className="account-notification-icon">
                         <i className={notif.icon}></i>
@@ -630,21 +592,7 @@ const Account = () => {
                   ))}
                 </div>
 
-                <div style={{ marginTop: "25px" }}>
-                  <div
-                    className="account-section-header"
-                    style={{
-                      background: "none",
-                      padding: 0,
-                      borderBottom: "1px solid rgba(60, 120, 180, 0.2)",
-                      marginBottom: "15px",
-                    }}
-                  >
-                    <h2 style={{ fontSize: "1.1rem" }}>
-                      <i className="fas fa-certificate"></i> Мои сертификаты
-                    </h2>
-                  </div>
-
+                <div style={{ marginTop: 25 }}>
                   <div className="account-certificates-list">
                     {certificates.map((cert) => (
                       <div key={cert.id} className="account-certificate-item">
@@ -671,6 +619,7 @@ const Account = () => {
         </div>
       </div>
 
+      {/* MODAL: Начало смены */}
       <div className={`account-modal-overlay ${shiftModalOpen ? "show" : ""}`} onClick={() => setShiftModalOpen(false)}>
         <div className="account-modal-content" onClick={(e) => e.stopPropagation()}>
           <div className="account-modal-header">
@@ -683,15 +632,14 @@ const Account = () => {
           </div>
 
           <div className="account-modal-body">
-            <div style={{ textAlign: "center", padding: "20px" }}>
-              <i className="fas fa-user-check" style={{ fontSize: "3rem", color: "#4dabf7", marginBottom: "20px" }}></i>
-              <h3 style={{ color: "#e0e0e0", marginBottom: "15px" }}>Подтверждение начала смены</h3>
-              <p style={{ color: "#b0c4de", marginBottom: "25px" }}>
+            <div style={{ textAlign: "center", padding: 20 }}>
+              <i className="fas fa-user-check" style={{ fontSize: "3rem", color: "#4dabf7", marginBottom: 20 }}></i>
+              <h3 style={{ color: "#e0e0e0", marginBottom: 15 }}>Подтверждение начала смены</h3>
+              <p style={{ color: "#b0c4de", marginBottom: 25 }}>
                 Вы собираетесь начать смену.<br />
                 Пожалуйста, проверьте готовность оборудования.
               </p>
-
-              <div style={{ color: "#8fb4d9", fontSize: "0.9rem", marginBottom: "25px" }}>
+              <div style={{ color: "#8fb4d9", fontSize: "0.9rem", marginBottom: 25 }}>
                 После начала смены система начнет отсчет рабочего времени.
               </div>
             </div>
@@ -699,12 +647,109 @@ const Account = () => {
 
           <div className="account-modal-footer">
             <button className="account-modal-button account-modal-secondary" onClick={() => setShiftModalOpen(false)}>
-              <i className="fas fa-times"></i>
-              Отмена
+              <i className="fas fa-times"></i> Отмена
             </button>
             <button className="account-modal-button account-modal-primary" onClick={confirmShift}>
-              <i className="fas fa-play"></i>
-              Начать смену
+              <i className="fas fa-play"></i> Начать смену
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ✅ MODAL: Обновление профиля */}
+      <div className={`account-modal-overlay ${profileModalOpen ? "show" : ""}`} onClick={closeProfileModal}>
+        <div className="account-modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="account-modal-header">
+            <h3>
+              <i className="fas fa-user-edit"></i> Обновление профиля
+            </h3>
+            <button className="account-modal-close" onClick={closeProfileModal} disabled={saving}>
+              &times;
+            </button>
+          </div>
+
+          <div className="account-modal-body">
+            {formError && (
+              <div className="account-form-error" style={{ marginBottom: 14 }}>
+                <i className="fas fa-exclamation-circle" style={{ marginRight: 8 }}></i>
+                {formError}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr" }}>
+              <input
+                className="account-input"
+                placeholder="Фамилия"
+                value={edit.last_name}
+                onChange={(e) => setEdit((p) => ({ ...p, last_name: e.target.value }))}
+                autoComplete="family-name"
+              />
+              <input
+                className="account-input"
+                placeholder="Имя"
+                value={edit.first_name}
+                onChange={(e) => setEdit((p) => ({ ...p, first_name: e.target.value }))}
+                autoComplete="given-name"
+              />
+              <input
+                className="account-input"
+                placeholder="Отчество"
+                value={edit.patronymic}
+                onChange={(e) => setEdit((p) => ({ ...p, patronymic: e.target.value }))}
+                autoComplete="additional-name"
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "2fr 1fr", marginTop: 12 }}>
+              <input
+                className="account-input"
+                placeholder="Email *"
+                value={edit.email}
+                onChange={(e) => setEdit((p) => ({ ...p, email: e.target.value }))}
+                autoComplete="email"
+                inputMode="email"
+              />
+              <input
+                className="account-input"
+                placeholder="Телефон"
+                value={edit.phone}
+                onChange={(e) => setEdit((p) => ({ ...p, phone: e.target.value }))}
+                autoComplete="tel"
+                inputMode="tel"
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+              <input
+                className="account-input"
+                type="password"
+                placeholder="Новый пароль (необязательно)"
+                value={edit.password}
+                onChange={(e) => setEdit((p) => ({ ...p, password: e.target.value }))}
+                autoComplete="new-password"
+              />
+              <input
+                className="account-input"
+                type="password"
+                placeholder="Подтвердите пароль"
+                value={edit.confirmPassword}
+                onChange={(e) => setEdit((p) => ({ ...p, confirmPassword: e.target.value }))}
+                autoComplete="new-password"
+              />
+            </div>
+
+            <div style={{ marginTop: 10, color: "#8fb4d9", fontSize: "0.9rem" }}>
+              Пароль менять необязательно — оставь поля пустыми.
+            </div>
+          </div>
+
+          <div className="account-modal-footer">
+            <button className="account-modal-button account-modal-secondary" onClick={closeProfileModal} disabled={saving}>
+              <i className="fas fa-times"></i> Отмена
+            </button>
+            <button className="account-modal-button account-modal-primary" onClick={saveProfile} disabled={saving}>
+              <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-save"}`}></i>
+              {saving ? "Сохранение..." : "Сохранить"}
             </button>
           </div>
         </div>

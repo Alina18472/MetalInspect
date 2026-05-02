@@ -1,4 +1,4 @@
-
+//App.js
 import { Routes, Route, Navigate } from "react-router-dom";
 import Auth from "./components/Auth";
 import Dashboard from "./components/DashboardPage";

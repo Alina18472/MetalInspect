@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import TopNav from "../components/TopNav";
 import "../styles/admin_account.css";
 import { useAuth } from "../context/AuthContext";
@@ -8,7 +8,7 @@ import { api } from "../services/Api";
 const AdminAccount = () => {
   const { user, loadMe } = useAuth();
 
-  const [users, setUsers] = useState([]); // теперь из БД
+  const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -25,10 +25,22 @@ const AdminAccount = () => {
   });
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState("create");
+  const [modalMode, setModalMode] = useState("create"); // create | edit | reset
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
+
+  // toast (короткие уведомления успеха/ошибок не-валидации)
   const [notification, setNotification] = useState(null);
+
+  // ✅ ошибки/валидация — внутри модалок
+  const [modalError, setModalError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  // ✅ ЖЁСТКИЙ замок от двойных кликов / двойных вызовов
+  const actionLockRef = useRef(false);
 
   const [systemStats, setSystemStats] = useState({
     totalUsers: 0,
@@ -42,26 +54,91 @@ const AdminAccount = () => {
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // подтянуть профиль, если надо
+  const roleToId = (roleLabel) => (roleLabel === "Админ" || roleLabel === "Администратор" ? 1 : 2);
+  const idToRoleLabel = (roleId) => (Number(roleId) === 1 ? "Админ" : "Инженер");
+
+  const showToast = (message, type = "success") => {
+    setNotification({ message, type, show: true });
+    setTimeout(() => {
+      setNotification((prev) => (prev ? { ...prev, show: false } : null));
+      setTimeout(() => setNotification(null), 250);
+    }, 2500);
+  };
+
+  const formatApiError = (e) => {
+    const detail = e?.data?.detail;
+
+    if (Array.isArray(detail)) {
+      const msgs = detail.map((x) => x?.msg).filter(Boolean);
+      if (msgs.length) return msgs.join(", ");
+    }
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (typeof e?.message === "string" && e.message.trim()) return e.message;
+
+    return "Ошибка запроса";
+  };
+
+  const refreshUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const data = await api.getUsers();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("getUsers error:", e);
+      showToast(formatApiError(e) || "Не удалось загрузить список пользователей", "error");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const toApiCreatePayload = (fd) => ({
+    email: (fd.email || "").trim(),
+    password: fd.password,
+    last_name: fd.lastname || null,
+    first_name: fd.name || null,
+    patronymic: fd.middlename || null,
+    phone: fd.phone || null,
+    role_id: roleToId(fd.role),
+    is_active: !!fd.is_active,
+  });
+
+  const toApiUpdatePayload = (fd) => {
+    const payload = {
+      email: (fd.email || "").trim(),
+      last_name: fd.lastname || null,
+      first_name: fd.name || null,
+      patronymic: fd.middlename || null,
+      phone: fd.phone || null,
+      role_id: roleToId(fd.role),
+      is_active: !!fd.is_active,
+    };
+    if (fd.password && fd.password.length >= 6) payload.password = fd.password;
+    return payload;
+  };
+
+  const closeModal = () => {
+    if (isSaving) return;
+    setModalOpen(false);
+    setModalMode("create");
+    setModalError("");
+    setFormData((p) => ({ ...p, password: "", confirmPassword: "" }));
+  };
+
+  const closeDeleteModal = () => {
+    if (isSaving) return;
+    setDeleteConfirmOpen(false);
+    setUserToDelete(null);
+    setDeleteError("");
+  };
+
+  // profile load
   useEffect(() => {
     if (!user) loadMe();
   }, [user, loadMe]);
 
-  // подтянуть список пользователей из БД
+  // users load
   useEffect(() => {
-    const run = async () => {
-      setLoadingUsers(true);
-      try {
-        const data = await api.getUsers();
-        // ожидаем массив пользователей
-        setUsers(Array.isArray(data) ? data : []);
-      } catch (e) {
-        showNotification(e?.message || "Не удалось загрузить список пользователей", "error");
-      } finally {
-        setLoadingUsers(false);
-      }
-    };
-    run();
+    refreshUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -70,7 +147,7 @@ const AdminAccount = () => {
     return () => document.body.classList.remove("admin-account-page");
   }, []);
 
-  // статистика
+  // stats
   useEffect(() => {
     const totalUsers = users.length;
     const activeUsers = users.filter((u) => u.is_active).length;
@@ -87,27 +164,18 @@ const AdminAccount = () => {
     setSystemStats({ totalUsers, activeUsers, engineers, admins, newThisMonth });
   }, [users]);
 
-  const showNotification = (message, type) => {
-    setNotification({ message, type, show: true });
-    setTimeout(() => {
-      setNotification((prev) => (prev ? { ...prev, show: false } : null));
-      setTimeout(() => setNotification(null), 300);
-    }, 3000);
-  };
-
   const profile = useMemo(() => {
     const last = user?.last_name || "";
     const first = user?.first_name || "";
     const pat = user?.patronymic || "";
     const fullName = `${last} ${first} ${pat}`.trim() || user?.email || "Администратор";
 
-    const shortName =
-      (last && first && `${last} ${first[0]}.` + (pat ? `${pat[0]}.` : "")) || fullName;
+    const shortName = (last && first && `${last} ${first[0]}.` + (pat ? `${pat[0]}.` : "")) || fullName;
 
     return {
       name: fullName,
       shortName,
-      role: user?.role_name || "Администратор",
+      role: Number(user?.role_id) === 1 ? "Администратор" : "Инженер",
       employeeId: `#${user?.id ?? "—"}`,
       department: "—",
       email: user?.email || "—",
@@ -116,7 +184,6 @@ const AdminAccount = () => {
     };
   }, [user]);
 
-  // преобразование user из БД -> формат для таблицы (last_name/first_name/patronymic)
   const normalizedUsers = useMemo(() => {
     return users.map((u) => ({
       id: u.id,
@@ -125,24 +192,23 @@ const AdminAccount = () => {
       middlename: u.patronymic || "",
       email: u.email || "",
       phone: u.phone || "",
-      role: u.role_name || (Number(u.role_id) === 1 ? "Админ" : "Инженер"),
       role_id: Number(u.role_id) || 0,
+      role: idToRoleLabel(u.role_id),
       is_active: !!u.is_active,
       created_at: u.created_at || "",
     }));
   }, [users]);
 
   const filteredUsers = normalizedUsers.filter((u) => {
-    const s = searchTerm.toLowerCase();
+    const s = (searchTerm || "").toLowerCase();
     const matchesSearch =
       !s ||
       u.lastname.toLowerCase().includes(s) ||
       u.name.toLowerCase().includes(s) ||
       u.email.toLowerCase().includes(s) ||
-      u.phone.includes(searchTerm);
+      (u.phone || "").includes(searchTerm);
 
     const matchesRole = roleFilter === "all" || u.role === roleFilter;
-
     const matchesStatus =
       statusFilter === "all" ||
       (statusFilter === "active" && u.is_active) ||
@@ -159,31 +225,204 @@ const AdminAccount = () => {
 
   const copyEmail = (email) => {
     navigator.clipboard.writeText(email);
-    showNotification("Email скопирован в буфер обмена", "info");
+    showToast("Email скопирован", "info");
   };
 
-  // Заглушки: действия CRUD пока не подключаем к API, чтобы UI не ломать
+  // ---- open modals
   const openCreateModal = () => {
-    showNotification("Создание пользователя подключим после API (POST /users)", "info");
+    setModalError("");
+    setModalMode("create");
+    setFormData({
+      id: null,
+      lastname: "",
+      name: "",
+      middlename: "",
+      email: "",
+      phone: "",
+      password: "",
+      confirmPassword: "",
+      role: "Инженер",
+      is_active: true,
+    });
+    setModalOpen(true);
   };
 
-  const openEditModal = () => {
-    showNotification("Редактирование подключим после API (PUT /users/{id})", "info");
+  const openEditModal = (u) => {
+    setModalError("");
+    setModalMode("edit");
+    setFormData({
+      id: u.id,
+      lastname: u.lastname || "",
+      name: u.name || "",
+      middlename: u.middlename || "",
+      email: u.email || "",
+      phone: u.phone || "",
+      password: "",
+      confirmPassword: "",
+      role: idToRoleLabel(u.role_id),
+      is_active: !!u.is_active,
+    });
+    setModalOpen(true);
   };
 
+  const openResetPasswordModal = (u) => {
+    setModalError("");
+    setModalMode("reset");
+    setFormData({
+      id: u.id,
+      lastname: u.lastname || "",
+      name: u.name || "",
+      middlename: u.middlename || "",
+      email: u.email || "",
+      phone: u.phone || "",
+      password: "",
+      confirmPassword: "",
+      role: idToRoleLabel(u.role_id),
+      is_active: !!u.is_active,
+    });
+    setModalOpen(true);
+  };
+
+  // ---- validation (modal)
+  const validateModal = () => {
+    const email = (formData.email || "").trim();
+    const pass = formData.password || "";
+    const conf = formData.confirmPassword || "";
+
+    if (!email) return "Email обязателен";
+
+    if (modalMode === "create") {
+      if (!pass) return "Пароль обязателен при создании пользователя";
+      if (pass.length < 6) return "Пароль должен быть не короче 6 символов";
+      if (!conf) return "Подтвердите пароль";
+      if (pass !== conf) return "Пароли не совпадают";
+    }
+
+    if (modalMode === "edit") {
+      if (pass || conf) {
+        if (pass.length < 6) return "Пароль должен быть не короче 6 символов";
+        if (!conf) return "Подтвердите пароль";
+        if (pass !== conf) return "Пароли не совпадают";
+      }
+    }
+
+    if (modalMode === "reset") {
+      if (!pass) return "Введите новый пароль";
+      if (pass.length < 6) return "Пароль должен быть не короче 6 символов";
+      if (!conf) return "Подтвердите пароль";
+      if (pass !== conf) return "Пароли не совпадают";
+    }
+
+    return "";
+  };
+
+  // ✅ single-flight helper
+  const runLocked = async (fn) => {
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+    try {
+      await fn();
+    } finally {
+      actionLockRef.current = false;
+    }
+  };
+
+  // ---- submit modal
+  const submitUserForm = async () => {
+    await runLocked(async () => {
+      if (isSaving) return;
+
+      const errText = validateModal();
+      if (errText) {
+        setModalError(errText);
+        return;
+      }
+
+      setModalError("");
+      setIsSaving(true);
+
+      try {
+        if (modalMode === "create") {
+          await api.createUser(toApiCreatePayload(formData));
+          showToast("Пользователь создан", "success");
+        } else if (modalMode === "edit") {
+          await api.updateUser(formData.id, toApiUpdatePayload(formData));
+          showToast("Пользователь обновлён", "success");
+        } else if (modalMode === "reset") {
+          await api.updateUser(formData.id, { password: formData.password });
+          showToast("Пароль обновлён", "success");
+        }
+
+        closeModal();
+        await refreshUsers();
+      } catch (e) {
+        console.error("User save error:", e);
+        setModalError(formatApiError(e));
+      } finally {
+        setIsSaving(false);
+      }
+    });
+  };
+
+  // ---- delete
   const confirmDeleteUser = (u) => {
+    setDeleteError("");
     setUserToDelete(u);
     setDeleteConfirmOpen(true);
   };
 
-  const deleteUser = () => {
-    showNotification("Удаление подключим после API (DELETE /users/{id})", "info");
-    setDeleteConfirmOpen(false);
-    setUserToDelete(null);
+  const deleteUser = async () => {
+    await runLocked(async () => {
+      if (!userToDelete?.id) return;
+      if (isSaving) return;
+
+      setDeleteError("");
+      setIsSaving(true);
+
+      try {
+        await api.deleteUser(userToDelete.id);
+
+        // ✅ сразу убираем из UI, чтобы было видно мгновенно
+        setUsers((prev) => prev.filter((x) => Number(x.id) !== Number(userToDelete.id)));
+
+        showToast("Пользователь удалён", "success");
+        closeDeleteModal();
+
+        // ✅ синхронизация с бэком
+        await refreshUsers();
+      } catch (e) {
+        console.error("Delete error:", e);
+        setDeleteError(formatApiError(e));
+      } finally {
+        setIsSaving(false);
+      }
+    });
   };
 
-  const toggleUserStatus = () => {
-    showNotification("Переключение статуса подключим после API (PATCH /users/{id})", "info");
+  // ---- status toggle
+  const toggleUserStatus = async (userId) => {
+    const target = normalizedUsers.find((x) => x.id === userId);
+    if (!target) return;
+
+    if (Number(user?.id) === Number(userId) && target.is_active) {
+      showToast("Нельзя деактивировать самого себя", "error");
+      return;
+    }
+
+    // optimistic
+    setUsers((prev) =>
+      prev.map((x) => (Number(x.id) === Number(userId) ? { ...x, is_active: !target.is_active } : x))
+    );
+
+    try {
+      await api.updateUser(userId, { is_active: !target.is_active });
+      showToast("Статус обновлён", "success");
+      await refreshUsers();
+    } catch (e) {
+      console.error("toggle status error:", e);
+      showToast(formatApiError(e) || "Не удалось обновить статус", "error");
+      await refreshUsers();
+    }
   };
 
   if (!user) {
@@ -193,6 +432,15 @@ const AdminAccount = () => {
       </div>
     );
   }
+
+  const modalTitle =
+    modalMode === "create"
+      ? "Создание пользователя"
+      : modalMode === "reset"
+      ? "Сброс пароля"
+      : "Редактирование пользователя";
+
+  const isResetMode = modalMode === "reset";
 
   return (
     <div className="admin-account-container">
@@ -218,6 +466,7 @@ const AdminAccount = () => {
       />
 
       <div className="admin-main-content">
+        {/* LEFT */}
         <div className="admin-profile-sidebar">
           <div className="admin-profile-card">
             <div className="admin-profile-header">
@@ -323,6 +572,7 @@ const AdminAccount = () => {
           </div>
         </div>
 
+        {/* RIGHT */}
         <div className="admin-management-panel">
           <div className="admin-management-header">
             <div className="admin-header-title">
@@ -348,6 +598,13 @@ const AdminAccount = () => {
               <i className="fas fa-search"></i>
               <input
                 type="text"
+                name="fake-username"
+                autoComplete="username"
+                style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+                />
+              <input
+                type="text"
+                autoComplete="off"
                 placeholder="Поиск по ФИО, email или телефону..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -456,6 +713,7 @@ const AdminAccount = () => {
                         <div
                           className={`admin-user-status ${u.is_active ? "admin-status-active" : "admin-status-inactive"}`}
                           onClick={() => toggleUserStatus(u.id)}
+                          title="Кликните, чтобы переключить"
                         >
                           <div className="admin-status-indicator-small"></div>
                           {u.is_active ? "Активен" : "Неактивен"}
@@ -477,10 +735,10 @@ const AdminAccount = () => {
                           <button className="admin-action-icon admin-action-delete" onClick={() => confirmDeleteUser(u)} title="Удалить">
                             <i className="fas fa-trash-alt"></i>
                           </button>
-                          <button className="admin-action-icon admin-action-reset" title="Сбросить пароль">
+                          <button className="admin-action-icon admin-action-reset" onClick={() => openResetPasswordModal(u)} title="Сбросить пароль">
                             <i className="fas fa-key"></i>
                           </button>
-                          <button className="admin-action-icon admin-action-view" title="Просмотр">
+                          <button className="admin-action-icon admin-action-view" onClick={() => openEditModal(u)} title="Просмотр">
                             <i className="fas fa-eye"></i>
                           </button>
                         </div>
@@ -502,18 +760,110 @@ const AdminAccount = () => {
         </div>
       </div>
 
-      <div className={`admin-modal-overlay ${deleteConfirmOpen ? "show" : ""}`} onClick={() => setDeleteConfirmOpen(false)}>
-        <div className="admin-modal-content admin-modal-small" onClick={(e) => e.stopPropagation()}>
+      {/* MODAL create/edit/reset */}
+      <div className={`admin-modal-overlay ${modalOpen ? "show" : ""}`}>
+        <div className="admin-modal-content" onClick={(e) => e.stopPropagation()}>
           <div className="admin-modal-header">
             <h3>
-              <i className="fas fa-exclamation-triangle"></i>
-              Подтверждение удаления
+              <i className="fas fa-user-edit"></i> {modalTitle}
             </h3>
-            <button className="admin-modal-close" onClick={() => setDeleteConfirmOpen(false)}>
+            <button className="admin-modal-close" onClick={closeModal} disabled={isSaving}>
               &times;
             </button>
           </div>
+
           <div className="admin-modal-body">
+            {modalError && (
+              <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: "rgba(244,67,54,0.15)", color: "#ffb4b4" }}>
+                <i className="fas fa-exclamation-circle" style={{ marginRight: 8 }}></i>
+                {modalError}
+              </div>
+            )}
+
+            {!isResetMode && (
+              <>
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr" }}>
+                  <input className="admin-search-input" placeholder="Фамилия" value={formData.lastname}
+                    onChange={(e) => setFormData((p) => ({ ...p, lastname: e.target.value }))} />
+                  <input className="admin-search-input" placeholder="Имя" value={formData.name}
+                    onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))} />
+                  <input className="admin-search-input" placeholder="Отчество" value={formData.middlename}
+                    onChange={(e) => setFormData((p) => ({ ...p, middlename: e.target.value }))} />
+                </div>
+
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "2fr 1fr", marginTop: 10 }}>
+                  <input className="admin-search-input" placeholder="Email *" value={formData.email}
+                    onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} />
+                  <input className="admin-search-input" placeholder="Телефон" value={formData.phone}
+                    onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))} />
+                </div>
+
+                <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10 }}>
+                  <select className="admin-filter-select" value={formData.role}
+                    onChange={(e) => setFormData((p) => ({ ...p, role: e.target.value }))}>
+                    <option value="Инженер">Инженер</option>
+                    <option value="Админ">Администратор</option>
+                  </select>
+
+                  <label style={{ display: "flex", gap: 10, alignItems: "center", color: "#b0c4de" }}>
+                    <input type="checkbox" checked={!!formData.is_active}
+                      onChange={(e) => setFormData((p) => ({ ...p, is_active: e.target.checked }))} />
+                    Активен
+                  </label>
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+              <input
+                className="admin-search-input"
+                type="password"
+                placeholder={modalMode === "create" ? "Пароль *" : "Новый пароль (необязательно)"}
+                value={formData.password}
+                onChange={(e) => setFormData((p) => ({ ...p, password: e.target.value }))}
+              />
+              <input
+                className="admin-search-input"
+                type="password"
+                placeholder="Подтвердите пароль"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData((p) => ({ ...p, confirmPassword: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="admin-modal-footer">
+            <button className="admin-modal-button admin-modal-secondary" onClick={closeModal} disabled={isSaving}>
+              <i className="fas fa-times"></i> Отмена
+            </button>
+            <button className="admin-modal-button admin-modal-primary" onClick={submitUserForm} disabled={isSaving}>
+              <i className={`fas ${isSaving ? "fa-spinner fa-spin" : "fa-save"}`}></i>
+              {isSaving ? "Сохранение..." : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* DELETE CONFIRM */}
+      <div className={`admin-modal-overlay ${deleteConfirmOpen ? "show" : ""}`}>
+        <div className="admin-modal-content admin-modal-small" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal-header">
+            <h3>
+              <i className="fas fa-exclamation-triangle"></i> Подтверждение удаления
+            </h3>
+            <button className="admin-modal-close" onClick={closeDeleteModal} disabled={isSaving}>
+              &times;
+            </button>
+          </div>
+
+          <div className="admin-modal-body">
+            {deleteError && (
+              <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: "rgba(244,67,54,0.15)", color: "#ffb4b4" }}>
+                <i className="fas fa-exclamation-circle" style={{ marginRight: 8 }}></i>
+                {deleteError}
+              </div>
+            )}
+
             <div style={{ textAlign: "center", padding: "20px" }}>
               <i className="fas fa-trash-alt" style={{ fontSize: "3rem", color: "#f44336", marginBottom: "20px" }}></i>
               <h3 style={{ color: "#e0e0e0", marginBottom: "15px" }}>Вы уверены?</h3>
@@ -527,14 +877,14 @@ const AdminAccount = () => {
               </p>
             </div>
           </div>
+
           <div className="admin-modal-footer">
-            <button className="admin-modal-button admin-modal-secondary" onClick={() => setDeleteConfirmOpen(false)}>
-              <i className="fas fa-times"></i>
-              Отмена
+            <button className="admin-modal-button admin-modal-secondary" onClick={closeDeleteModal} disabled={isSaving}>
+              <i className="fas fa-times"></i> Отмена
             </button>
-            <button className="admin-modal-button admin-modal-danger" onClick={deleteUser}>
-              <i className="fas fa-trash-alt"></i>
-              Удалить пользователя
+            <button className="admin-modal-button admin-modal-danger" onClick={deleteUser} disabled={isSaving}>
+              <i className={`fas ${isSaving ? "fa-spinner fa-spin" : "fa-trash-alt"}`}></i>
+              {isSaving ? "Удаление..." : "Удалить пользователя"}
             </button>
           </div>
         </div>

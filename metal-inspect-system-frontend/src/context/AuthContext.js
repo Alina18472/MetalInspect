@@ -1,4 +1,4 @@
-
+//AuthContext.js
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { api } from "../services/Api";
 
@@ -67,6 +67,23 @@ export function AuthProvider({ children }) {
       return { ok: false, error: e?.message || "Failed to load profile" };
     }
   };
+  const updateMe = async (payload) => {
+    try {
+      const me = await api.updateMe(payload);
+      const role = Number(me.role_id) || 0;
+  
+      localStorage.setItem("role_id", String(role));
+      localStorage.setItem("user", JSON.stringify(me));
+  
+      setRoleId(role);
+      setUser(me);
+  
+      return { ok: true, user: me };
+    } catch (e) {
+      return { ok: false, error: e?.data?.detail || e?.message || "Failed to update profile" };
+    }
+  };
+  
 
   const logout = () => {
     localStorage.removeItem("access_token");
@@ -81,7 +98,7 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(
-    () => ({ accessToken, userEmail, roleId, user, isAuthenticated, isLoading, login, loadMe, logout }),
+    () => ({ accessToken, userEmail, roleId, user, isAuthenticated, isLoading, login, loadMe, logout, updateMe }),
     [accessToken, userEmail, roleId, user, isAuthenticated, isLoading]
   );
 

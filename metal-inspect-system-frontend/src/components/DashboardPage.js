@@ -1,103 +1,144 @@
 
-// export default Dashboard;
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import "../styles/dashboard.css";
-import TopNav from '../components/TopNav';
-
+import TopNav from "../components/TopNav";
+import { api, API_BASE_URL } from "../services/Api";
 
 const Dashboard = () => {
-  const navigate = useNavigate();
+  const [shiftStatus, setShiftStatus] = useState(null);
+  const [eventsData, setEventsData] = useState([]);
 
- 
+  const [mode, setMode] = useState("balanced");
+  const [threshold, setThreshold] = useState("");
+  const [delaySec, setDelaySec] = useState("0.7");
 
-  
-  const [aiDetections, setAiDetections] = useState([
-    { id: 1, x: 120, y: 80, width: 180, height: 120, confidence: 0.96, type: "трещина" },
-    { id: 2, x: 350, y: 150, width: 140, height: 90, confidence: 0.87, type: "трещина" },
-    { id: 3, x: 600, y: 200, width: 200, height: 110, confidence: 0.92, type: "трещина" },
-    { id: 4, x: 850, y: 100, width: 160, height: 100, confidence: 0.78, type: "подозрение" },
-  ]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const [eventsData, setEventsData] = useState([
-    { time: "14:23:17", id: "SL-4829", confidence: 0.96 },
-    { time: "14:21:05", id: "SL-4827", confidence: 0.87 },
-    { time: "14:18:42", id: "SL-4824", confidence: 0.92 },
-    { time: "14:15:33", id: "SL-4821", confidence: 0.78 },
-    { time: "14:12:19", id: "SL-4818", confidence: 0.95 },
-    { time: "14:09:05", id: "SL-4815", confidence: 0.81 },
-    { time: "14:05:47", id: "SL-4812", confidence: 0.89 },
-    { time: "14:02:31", id: "SL-4809", confidence: 0.93 },
-    { time: "13:58:22", id: "SL-4805", confidence: 0.84 },
-    { time: "13:54:10", id: "SL-4801", confidence: 0.91 },
-  ]);
-
-  const [stats, setStats] = useState({
-    totalIngots: 1247,
-    defectsFound: 18,
-    defectRate: 1.44,
-    avgConfidence: 94.7,
-  });
-
-  const [isPaused, setIsPaused] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  useEffect(() => {
-    const statsInterval = setInterval(updateStats, 5000);
+  const loadDashboardData = async () => {
+    try {
+      const [status, journal] = await Promise.all([
+        api.getShiftStatus(),
+        api.getJournal(),
+      ]);
 
-    const eventsInterval = setInterval(() => {
-      if (Math.random() > 0.7 && !isPaused) addNewEvent();
-    }, 10000);
+      setShiftStatus(status);
 
-    return () => {
-      clearInterval(statsInterval);
-      clearInterval(eventsInterval);
-    };
-  }, [isPaused]);
+      const mappedEvents = (journal.items || []).map((item) => ({
+        defectDbId: item.id,
+        inspectionId: item.inspection_id,
 
-  const updateStats = () => {
-    if (isPaused) return;
+        time: item.time ? item.time.replace("T", " ") : "",
+        id: item.ingot_id,
+        confidence: item.confidence || item.max_p_crack || 0,
 
-    setStats((prev) => {
-      const newIngots = prev.totalIngots + Math.floor(Math.random() * 3) + 1;
-      const newDefects = prev.defectsFound + (Math.random() > 0.7 ? 1 : 0);
-      const newRate = ((newDefects / newIngots) * 100).toFixed(2);
-      const newConfidence = prev.avgConfidence + (Math.random() > 0.5 ? 0.1 : -0.1);
+        status: item.status || "pending",
+        operator: item.operator || "Автоматически",
+        comment: item.comment || "Требуется проверка оператором",
 
-      return {
-        totalIngots: newIngots,
-        defectsFound: newDefects,
-        defectRate: parseFloat(newRate),
-        avgConfidence: parseFloat(newConfidence.toFixed(1)),
-      };
-    });
+        defectType: item.defect_type || "crack",
+        maxPCrack: item.max_p_crack,
+        threshold: item.threshold,
+        mode: item.mode,
+        framesCount: item.frames_count,
+        verdict: item.verdict,
+
+        bestFrameUrl: item.best_frame_url
+          ? `${API_BASE_URL}${item.best_frame_url}`
+          : null,
+      }));
+
+      setEventsData(mappedEvents.slice(0, 10));
+      setError("");
+    } catch (e) {
+      setError(e?.message || "Не удалось загрузить данные панели");
+    }
   };
 
-  const addNewEvent = () => {
-    const now = new Date();
-    const timeString =
-      now.getHours().toString().padStart(2, "0") +
-      ":" +
-      now.getMinutes().toString().padStart(2, "0") +
-      ":" +
-      now.getSeconds().toString().padStart(2, "0");
+  useEffect(() => {
+    loadDashboardData();
 
-    const newId = `SL-${Math.floor(Math.random() * 1000) + 4830}`;
-    const newConfidence = Math.random() * 0.2 + 0.75;
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 1500);
 
-    const newEvent = { time: timeString, id: newId, confidence: newConfidence };
-    setEventsData((prev) => [newEvent, ...prev.slice(0, 9)]);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStartShift = async () => {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      await api.startShift({
+        mode,
+        threshold: threshold === "" ? null : Number(threshold),
+        delaySec: Number(delaySec || 0.7),
+      });
+
+      await loadDashboardData();
+    } catch (e) {
+      setError(e?.message || "Не удалось запустить смену");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStopShift = async () => {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      await api.stopShift();
+      await loadDashboardData();
+    } catch (e) {
+      setError(e?.message || "Не удалось остановить смену");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const confirmEvent = async (event) => {
+    const comment = window.prompt(
+      "Комментарий к подтверждению:",
+      "Трещина подтверждена"
+    );
+
+    if (comment === null) return;
+
+    try {
+      await api.confirmDefect(event.defectDbId, comment);
+      await loadDashboardData();
+      setIsModalOpen(false);
+    } catch (e) {
+      alert(e?.message || "Не удалось подтвердить дефект");
+    }
+  };
+
+  const rejectEvent = async (event) => {
+    const comment = window.prompt(
+      "Комментарий к отклонению:",
+      "Ложное срабатывание"
+    );
+
+    if (comment === null) return;
+
+    try {
+      await api.rejectDefect(event.defectDbId, comment);
+      await loadDashboardData();
+      setIsModalOpen(false);
+    } catch (e) {
+      alert(e?.message || "Не удалось отклонить дефект");
+    }
   };
 
   const openEventDetails = (event) => {
     setSelectedEvent(event);
     setIsModalOpen(true);
   };
-
-  const handlePauseToggle = () => setIsPaused((v) => !v);
-
-  const refreshEvents = () => console.log("Обновление событий...");
 
   const getConfidenceClass = (confidence) => {
     if (confidence > 0.9) return "high-confidence";
@@ -117,253 +158,508 @@ const Dashboard = () => {
     return "Низкая";
   };
 
-  // ВАЖНО: твой CSS для .modal-overlay содержит display:none — поэтому модалка не показывалась.
-  // Мы добавим inline style display:flex когда isModalOpen=true
-  const modalStyle = isModalOpen
-    ? { display: "flex" }
-    : { display: "none" };
+  const getStatusText = (status) => {
+    const map = {
+      pending: "Ожидает проверки",
+      confirmed: "Подтверждено",
+      rejected: "Отклонено",
+      sent_to_mes: "Передано в MES",
+    };
 
-    return (
-      <div className="dashboard-page">
-          <div className="dashboard-container">
-              <TopNav
-                  subtitle="Система распознавания трещин в слитках • Главный экран оператора"
-                  userName="Оператор Иванов А.С."
-                  userRole="Смена #3 • 08:00-20:00"
-              />
-  
-              <div className="dashboard-main-content">
-                  <div className="video-panel">
-                      <div className="video-header">
-                          <h2>
-                              <i className="fas fa-video"></i> Видеопоток с камеры контроля
-                          </h2>
-                          <div className="camera-info">
-                              <i className="fas fa-camera"></i>
-                              <span>Камера #4 • Линия разливки • Разрешение: 1920x1080</span>
-                          </div>
-                      </div>
-  
-                      <div className="video-container">
-                          <div className="video-placeholder"></div>
-  
-                          <div className="video-overlay">
-                              {aiDetections.map((detection) => (
-                                  <div
-                                      key={detection.id}
-                                      className="ai-box"
-                                      style={{
-                                          left: `${detection.x}px`,
-                                          top: `${detection.y}px`,
-                                          width: `${detection.width}px`,
-                                          height: `${detection.height}px`,
-                                          borderColor:
-                                              detection.confidence > 0.9
-                                                  ? "#f44336"
-                                                  : detection.confidence > 0.8
-                                                  ? "#ff9800"
-                                                  : "#4CAF50",
-                                      }}
-                                      onClick={() => openEventDetails(detection)}
-                                  >
-                                      <div className="confidence-label">
-                                          {Math.round(detection.confidence * 100)}% {detection.type}
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-  
-                      <div className="video-controls">
-                          <div>
-                              <button className={`control-btn ${isPaused ? "paused" : ""}`} onClick={handlePauseToggle}>
-                                  <i className={`fas fa-${isPaused ? "play" : "pause"}`}></i>
-                                  {isPaused ? " Возобновить" : " Приостановить"}
-                              </button>
-                              <button className="control-btn secondary">
-                                  <i className="fas fa-flag"></i> Пометить дефект
-                              </button>
-                              <button className="control-btn secondary">
-                                  <i className="fas fa-sliders-h"></i> Калибровка
-                              </button>
-                          </div>
-  
-                          <div className="fps-indicator">
-                              <i className="fas fa-tachometer-alt"></i>
-                              Обработка: {isPaused ? "0" : "32"} кадра/сек • Задержка: 47 мс
-                          </div>
-                      </div>
-                  </div>
-  
-                  <div className="stats-panel">
-                      {/* <div className="stats-container">
-                          <div className="panel-header">
-                              <h2>
-                                  <i className="fas fa-chart-bar"></i> Текущая статистика
-                              </h2>
-                              <div style={{ color: "#8fb4d9", fontSize: "0.9rem" }}>Смена #3</div>
-                          </div>
-  
-                          <div className="stats-content">
-                              <div className="stat-card">
-                                  <div className="stat-value">{stats.totalIngots.toLocaleString()}</div>
-                                  <div className="stat-label">Проверено слитков</div>
-                                  <div className="stat-trend trend-up">
-                                      <i className="fas fa-arrow-up"></i> +12 за 5 мин
-                                  </div>
-                              </div>
-  
-                              <div className="stat-card">
-                                  <div className="stat-value">{stats.defectsFound}</div>
-                                  <div className="stat-label">Выявлено дефектов</div>
-                                  <div className="stat-trend trend-down">
-                                      <i className="fas fa-arrow-down"></i> -2 за час
-                                  </div>
-                              </div>
-  
-                              <div className="stat-card">
-                                  <div className="stat-value">{stats.defectRate.toFixed(2)}%</div>
-                                  <div className="stat-label">Процент брака</div>
-                                  <div className="stat-trend trend-down">
-                                      <i className="fas fa-arrow-down"></i> -0.3% за смену
-                                  </div>
-                              </div>
-  
-                              <div className="stat-card">
-                                  <div className="stat-value">{stats.avgConfidence.toFixed(1)}%</div>
-                                  <div className="stat-label">Средняя уверенность</div>
-                                  <div className="stat-trend trend-up">
-                                      <i className="fas fa-arrow-up"></i> +1.2% за день
-                                  </div>
-                              </div>
-                          </div>
-                      </div> */}
-  
-                      <div className="events-container">
-                          <div className="panel-header">
-                              <h2>
-                                  <i className="fas fa-history"></i> Последние события
-                              </h2>
-                              <div style={{ color: "#8fb4d9", fontSize: "0.9rem" }}>
-                                  <i className="fas fa-sync-alt" style={{ cursor: "pointer" }} onClick={refreshEvents}></i>
-                              </div>
-                          </div>
-  
-                          <div className="events-content">
-                              <table className="events-table">
-                                  <thead>
-                                      <tr>
-                                          <th>Время</th>
-                                          <th>ID слитка</th>
-                                          <th>Уверенность</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-                                      {eventsData.map((event, index) => (
-                                          <tr key={index} onClick={() => openEventDetails(event)} className="event-row">
-                                              <td className="event-time">{event.time}</td>
-                                              <td className="event-id">{event.id}</td>
-                                              <td>
-                                                  <div className="confidence-cell">
-                                                      <div className="confidence-bar">
-                                                          <div
-                                                              className={`confidence-fill ${getConfidenceClass(event.confidence)}`}
-                                                              style={{ width: `${Math.round(event.confidence * 100)}%` }}
-                                                          ></div>
-                                                      </div>
-                                                      <span>{Math.round(event.confidence * 100)}%</span>
-                                                  </div>
-                                              </td>
-                                          </tr>
-                                      ))}
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
+    return map[status] || status || "Ожидает проверки";
+  };
+
+  const latestEvent = eventsData[0] || null;
+
+  const processedIngots = shiftStatus?.processed_ingots || 0;
+  const totalIngots = shiftStatus?.total_ingots || 0;
+  const totalCrack = shiftStatus?.total_crack || 0;
+  const totalOk = shiftStatus?.total_ok || 0;
+  const defectRate = shiftStatus?.defect_rate || 0;
+
+  const modalStyle = isModalOpen ? { display: "flex" } : { display: "none" };
+
+  return (
+    <div className="dashboard-page">
+      <div className="dashboard-container">
+        <TopNav
+          subtitle="Система распознавания трещин в слитках • Главный экран оператора"
+          userName="Оператор системы"
+          userRole="Контроль качества • AI-зрение"
+        />
+
+        <div className="dashboard-main-content">
+          <div className="video-panel">
+            <div className="video-header">
+              <h2>
+                <i className="fas fa-video"></i> Имитация видеопотока контроля
+              </h2>
+
+              <div className="camera-info">
+                <i className="fas fa-camera"></i>
+                <span>
+                  Источник: папка stream_images • Модель: ResNet18 crack / ok
+                </span>
               </div>
-  
-              {selectedEvent && (
-                  <div className="modal-overlay" style={modalStyle} onClick={() => setIsModalOpen(false)}>
-                      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                          <div className="modal-header">
-                              <h3>Детализация дефекта</h3>
-                              <button className="close-modal" onClick={() => setIsModalOpen(false)}>
-                                  &times;
-                              </button>
-                          </div>
-                          <div className="modal-body">
-                              <div className="detail-image">
-                                  <div style={{ textAlign: "center", color: "#8fb4d9", padding: "20px" }}>
-                                      <i className="fas fa-image" style={{ fontSize: "3rem", marginBottom: "15px" }}></i>
-                                      <div>Изображение слитка {selectedEvent.id}</div>
-                                      <div style={{ fontSize: "0.9rem", marginTop: "10px" }}>
-                                          Обнаружена {selectedEvent.type || "трещина"}
-                                      </div>
-                                  </div>
-                              </div>
-                              <div className="detail-info">
-                                  <h3 style={{ color: "#e0e0e0", marginBottom: "10px" }}>Информация о дефекте</h3>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">ID слитка:</span>
-                                      <span className="detail-value">{selectedEvent.id || "SL-4829"}</span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Время обнаружения:</span>
-                                      <span className="detail-value">{selectedEvent.time || "14:23:17"}</span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Уверенность ИИ:</span>
-                                      <span className={`detail-value ${getCriticalityClass(selectedEvent.confidence)}`}>
-                                          {Math.round((selectedEvent.confidence || 0.96) * 100)}%
-                                      </span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Критичность:</span>
-                                      <span className={`detail-value ${getCriticalityClass(selectedEvent.confidence)}`}>
-                                          {getCriticalityText(selectedEvent.confidence)}
-                                      </span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Тип дефекта:</span>
-                                      <span className="detail-value">{selectedEvent.type || "Продольная трещина"}</span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Размер:</span>
-                                      <span className="detail-value">
-                                          ~{selectedEvent.width ? `${selectedEvent.width}x${selectedEvent.height} px` : "180x120 px"}
-                                      </span>
-                                  </div>
-  
-                                  <div className="detail-row">
-                                      <span className="detail-label">Статус проверки:</span>
-                                      <span className="detail-value detail-warning">Требует подтверждения оператором</span>
-                                  </div>
-  
-                                  <div style={{ marginTop: "20px", paddingTop: "15px", borderTop: "1px solid rgba(60, 120, 180, 0.3)" }}>
-                                      <button className="control-btn" style={{ width: "100%", marginBottom: "10px" }}>
-                                          <i className="fas fa-check-circle"></i> Подтвердить дефект
-                                      </button>
-                                      <button className="control-btn secondary" style={{ width: "100%" }}>
-                                          <i className="fas fa-times-circle"></i> Отметить как ложное срабатывание
-                                      </button>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
+            </div>
+
+            <div className="video-container">
+            {shiftStatus?.current_frame_url ? (
+                <img
+                    src={`${API_BASE_URL}${shiftStatus.current_frame_url}`}
+                    alt={shiftStatus.current_frame_name || "Текущий кадр"}
+                    style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                    display: "block",
+                    }}
+                />
+                ) : latestEvent?.bestFrameUrl ? (
+                <img
+                    src={latestEvent.bestFrameUrl}
+                    alt={`Лучший кадр ${latestEvent.id}`}
+                    style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                    display: "block",
+                    }}
+                />
+                ) : (
+                <div className="video-placeholder"></div>
+                )}
+               
+              <div className="video-overlay">
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "20px",
+                    top: "20px",
+                    padding: "14px 18px",
+                    borderRadius: "10px",
+                    background: "rgba(0, 0, 0, 0.65)",
+                    color: "#e0e0e0",
+                    maxWidth: "520px",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  <div>
+                    <strong>Статус смены:</strong>{" "}
+                    {shiftStatus?.running ? "идёт обработка" : "не запущена / завершена"}
                   </div>
-              )}
+
+                  <div>
+                    <strong>Текущий слиток:</strong>{" "}
+                    {shiftStatus?.current_ingot || "—"}
+                  </div>
+                  <div>
+                    <strong>Текущий кадр:</strong>{" "}
+                    {shiftStatus?.current_frame_name || "—"}
+                    </div>
+
+                    <div>
+                    <strong>Кадр в слитке:</strong>{" "}
+                    {shiftStatus?.current_frame_index && shiftStatus?.current_frame_total
+                        ? `${shiftStatus.current_frame_index}/${shiftStatus.current_frame_total}`
+                        : "—"}
+                    </div>
+
+                    <div>
+                    <strong>p_crack кадра:</strong>{" "}
+                    {shiftStatus?.current_p_crack !== null &&
+                    shiftStatus?.current_p_crack !== undefined
+                        ? Number(shiftStatus.current_p_crack).toFixed(3)
+                        : "—"}
+                    </div>
+
+                    <div>
+                    <strong>Вердикт кадра:</strong>{" "}
+                    {shiftStatus?.current_frame_verdict || "—"}
+                    </div>
+
+                  <div>
+                    <strong>Прогресс:</strong> {processedIngots} / {totalIngots}
+                  </div>
+
+                  <div>
+                    <strong>Последнее сообщение:</strong>{" "}
+                    {shiftStatus?.message || "Нет данных"}
+                  </div>
+
+                  {shiftStatus?.last_result && (
+                    <div>
+                      <strong>Последний результат:</strong>{" "}
+                      {shiftStatus.last_result.ingot_id} —{" "}
+                      {shiftStatus.last_result.verdict}, max_p_crack=
+                      {Number(shiftStatus.last_result.max_p_crack || 0).toFixed(3)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="video-controls">
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <select
+                  className="control-btn secondary"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  disabled={shiftStatus?.running}
+                >
+                  <option value="strict">Меньше ложных срабатываний</option>
+                  <option value="balanced">Сбалансированный</option>
+                  <option value="sensitive">Меньше пропусков дефектов</option>
+                </select>
+
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  max="1"
+                  placeholder="threshold"
+                  value={threshold}
+                  onChange={(e) => setThreshold(e.target.value)}
+                  disabled={shiftStatus?.running}
+                  style={{
+                    width: "120px",
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(60,120,180,0.4)",
+                    background: "rgba(20,30,45,0.9)",
+                    color: "#e0e0e0",
+                  }}
+                />
+
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="delay"
+                  value={delaySec}
+                  onChange={(e) => setDelaySec(e.target.value)}
+                  disabled={shiftStatus?.running}
+                  style={{
+                    width: "90px",
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(60,120,180,0.4)",
+                    background: "rgba(20,30,45,0.9)",
+                    color: "#e0e0e0",
+                  }}
+                />
+
+                {!shiftStatus?.running ? (
+                  <button
+                    className="control-btn"
+                    onClick={handleStartShift}
+                    disabled={isLoading}
+                  >
+                    <i className="fas fa-play"></i> Начать смену
+                  </button>
+                ) : (
+                  <button
+                    className="control-btn paused"
+                    onClick={handleStopShift}
+                    disabled={isLoading}
+                  >
+                    <i className="fas fa-stop"></i> Остановить смену
+                  </button>
+                )}
+
+                <button
+                  className="control-btn secondary"
+                  onClick={loadDashboardData}
+                  disabled={isLoading}
+                >
+                  <i className="fas fa-sync-alt"></i> Обновить
+                </button>
+              </div>
+
+              <div className="fps-indicator">
+                <i className="fas fa-tachometer-alt"></i>
+                Режим: {shiftStatus?.mode || mode} • threshold:{" "}
+                {Number(shiftStatus?.threshold ?? threshold ?? 0.465).toFixed(3)}
+                </div>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  color: "#f44336",
+                  fontWeight: "600",
+                }}
+              >
+                {error}
+              </div>
+            )}
           </div>
+
+          <div className="stats-panel">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              <div className="stat-card">
+                <div className="stat-value">{processedIngots}</div>
+                <div className="stat-label">Обработано слитков</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-value">{totalCrack}</div>
+                <div className="stat-label">Дефектных</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-value">{totalOk}</div>
+                <div className="stat-label">OK</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-value">{defectRate.toFixed(1)}%</div>
+                <div className="stat-label">Доля дефектных</div>
+              </div>
+            </div>
+
+            <div className="events-container">
+              <div className="panel-header">
+                <h2>
+                  <i className="fas fa-history"></i> Последние события
+                </h2>
+
+                <div style={{ color: "#8fb4d9", fontSize: "0.9rem" }}>
+                  <i
+                    className="fas fa-sync-alt"
+                    style={{ cursor: "pointer" }}
+                    onClick={loadDashboardData}
+                  ></i>
+                </div>
+              </div>
+
+              <div className="events-content">
+                <table className="events-table">
+                  <thead>
+                    <tr>
+                      <th>Время</th>
+                      <th>ID слитка</th>
+                      <th>Уверенность</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {eventsData.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan="3"
+                          style={{
+                            textAlign: "center",
+                            padding: "30px",
+                            color: "#8fb4d9",
+                          }}
+                        >
+                          Событий дефектов пока нет
+                        </td>
+                      </tr>
+                    ) : (
+                      eventsData.map((event) => (
+                        <tr
+                          key={event.defectDbId}
+                          onClick={() => openEventDetails(event)}
+                          className="event-row"
+                        >
+                          <td className="event-time">{event.time}</td>
+                          <td className="event-id">{event.id}</td>
+                          <td>
+                            <div className="confidence-cell">
+                              <div className="confidence-bar">
+                                <div
+                                  className={`confidence-fill ${getConfidenceClass(
+                                    event.confidence
+                                  )}`}
+                                  style={{
+                                    width: `${Math.round(event.confidence * 100)}%`,
+                                  }}
+                                ></div>
+                              </div>
+                              <span>{Math.round(event.confidence * 100)}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {selectedEvent && (
+          <div
+            className="modal-overlay"
+            style={modalStyle}
+            onClick={() => setIsModalOpen(false)}
+          >
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Детализация дефекта</h3>
+                <button
+                  className="close-modal"
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="modal-body">
+                <div className="detail-image">
+                  {selectedEvent.bestFrameUrl ? (
+                    <img
+                      src={selectedEvent.bestFrameUrl}
+                      alt={`Лучший кадр ${selectedEvent.id}`}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        textAlign: "center",
+                        color: "#8fb4d9",
+                        padding: "20px",
+                      }}
+                    >
+                      <i
+                        className="fas fa-image"
+                        style={{ fontSize: "3rem", marginBottom: "15px" }}
+                      ></i>
+                      <div>Изображение недоступно</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="detail-info">
+                  <h3 style={{ color: "#e0e0e0", marginBottom: "10px" }}>
+                    Информация о дефекте
+                  </h3>
+
+                  <div className="detail-row">
+                    <span className="detail-label">ID слитка:</span>
+                    <span className="detail-value">{selectedEvent.id}</span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Время обнаружения:</span>
+                    <span className="detail-value">{selectedEvent.time}</span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Уверенность ИИ:</span>
+                    <span
+                      className={`detail-value ${getCriticalityClass(
+                        selectedEvent.confidence
+                      )}`}
+                    >
+                      {Math.round(selectedEvent.confidence * 100)}%
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">max_p_crack:</span>
+                    <span className="detail-value">
+                      {Number(selectedEvent.maxPCrack || 0).toFixed(3)}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Threshold:</span>
+                    <span className="detail-value">
+                      {Number(selectedEvent.threshold || 0).toFixed(3)}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Кадров в слитке:</span>
+                    <span className="detail-value">
+                      {selectedEvent.framesCount}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Критичность:</span>
+                    <span
+                      className={`detail-value ${getCriticalityClass(
+                        selectedEvent.confidence
+                      )}`}
+                    >
+                      {getCriticalityText(selectedEvent.confidence)}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Тип дефекта:</span>
+                    <span className="detail-value">Трещина</span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Статус проверки:</span>
+                    <span className="detail-value detail-warning">
+                      {getStatusText(selectedEvent.status)}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Комментарий:</span>
+                    <span className="detail-value">{selectedEvent.comment}</span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "20px",
+                      paddingTop: "15px",
+                      borderTop: "1px solid rgba(60, 120, 180, 0.3)",
+                    }}
+                  >
+                    <button
+                      className="control-btn"
+                      style={{ width: "100%", marginBottom: "10px" }}
+                      onClick={() => confirmEvent(selectedEvent)}
+                    >
+                      <i className="fas fa-check-circle"></i> Подтвердить дефект
+                    </button>
+
+                    <button
+                      className="control-btn secondary"
+                      style={{ width: "100%" }}
+                      onClick={() => rejectEvent(selectedEvent)}
+                    >
+                      <i className="fas fa-times-circle"></i> Отметить как
+                      ложное срабатывание
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
   );
-  
- 
 };
 
 export default Dashboard;

@@ -1,3 +1,4 @@
+//AiPanelPage.js
 import React, { useState, useEffect } from 'react';
 import '../styles/ai_panel.css';
 import TopNav from "../components/TopNav";

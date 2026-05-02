@@ -60,3 +60,7 @@ Thumbs.db
 *.seed
 *.sock
 docker-compose.override.yml
+
+
+backend/media/
+backend/stream_images/
