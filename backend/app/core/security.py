@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.user import User
+from app.core.database import get_db
 
 SECRET_KEY = "CHANGE_ME_SUPER_SECRET"
 ALGORITHM = "HS256"
@@ -17,7 +18,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+
 
 
 def hash_password(password: str) -> str:
@@ -37,12 +42,6 @@ def create_access_token(data: dict):
 
 # ---- NEW: dependencies for protected endpoints ----
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def decode_token(token: str) -> dict:
@@ -75,3 +74,7 @@ def get_current_user(
         raise HTTPException(status_code=403, detail="User is inactive")
 
     return user
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if int(current_user.role_id) != 1:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return current_user

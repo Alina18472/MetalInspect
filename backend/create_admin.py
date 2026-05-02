@@ -2,7 +2,7 @@ from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import hash_password
 
-EMAIL = "admin@test.com"
+EMAIL = "admin2@test.com"
 PASSWORD = "admin123"
 
 def main():

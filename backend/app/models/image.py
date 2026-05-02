@@ -17,7 +17,13 @@ class Image(Base):
 
     file_path = Column(String, nullable=False)
 
-    inspection_id = Column(Integer, ForeignKey("inspections.id"))
-    defect_id = Column(Integer, ForeignKey("defects.id"))
+    # best_frame / gradcam / source
+    image_type = Column(String(50), default="best_frame")
+
+    inspection_id = Column(Integer, ForeignKey("inspections.id", ondelete="CASCADE"))
+    defect_id = Column(Integer, ForeignKey("defects.id", ondelete="CASCADE"))
 
     created_at = Column(DateTime, server_default=func.now())
+
+    inspection = relationship("Inspection", back_populates="images")
+    defect = relationship("Defect", back_populates="images")

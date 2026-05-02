@@ -4,3 +4,8 @@ sqlalchemy
 psycopg2-binary
 pydantic
 python-dotenv
+torch
+torchvision
+pillow
+opencv-python
+python-multipart

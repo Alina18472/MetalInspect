@@ -1,4 +1,4 @@
-# app/api/auth.py (или api/auth.py как у тебя)
+# app/api/auth.py 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
@@ -6,7 +6,7 @@ from app.schemas.auth import LoginRequest, LoginResponse
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import verify_password, create_access_token
-
+from fastapi.security import OAuth2PasswordRequestForm
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 def get_db():
@@ -53,4 +53,31 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             "role_id": int(user.role_id),
             "role_name": user.role.name if user.role else None,  # если в Role есть name
         }
+    }
+@router.post("/token")
+def login_for_swagger(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    user = (
+        db.query(User)
+        .options(joinedload(User.role))
+        .filter(User.email == form_data.username)
+        .first()
+    )
+
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User is inactive")
+
+    token = create_access_token({
+        "sub": str(user.id),
+        "role_id": int(user.role_id),
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
     }
