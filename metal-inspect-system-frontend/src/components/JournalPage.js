@@ -1,33 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import '../styles/journal.css';
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
 const Journal = () => {
     // Начальные данные
-    const initialJournalData = [
-        { time: "2023-06-15 14:23:17", id: "SL-4829", confidence: 0.96, status: "confirmed", operator: "Иванов А.С.", comment: "Глубокая продольная трещина, требуется переплавка", defectType: "crack" },
-        { time: "2023-06-15 14:21:05", id: "SL-4827", confidence: 0.87, status: "confirmed", operator: "Иванов А.С.", comment: "Небольшая поверхностная трещина", defectType: "crack" },
-        { time: "2023-06-15 14:18:42", id: "SL-4824", confidence: 0.92, status: "pending", operator: "Автоматически", comment: "Требуется проверка оператором", defectType: "crack" },
-        { time: "2023-06-15 14:15:33", id: "SL-4821", confidence: 0.78, status: "rejected", operator: "Петров В.И.", comment: "Ложное срабатывание, дефект не подтвержден", defectType: "scratch" },
-        { time: "2023-06-15 14:12:19", id: "SL-4818", confidence: 0.95, status: "confirmed", operator: "Иванов А.С.", comment: "Критичный дефект, брак", defectType: "crack" },
-        { time: "2023-06-15 14:09:05", id: "SL-4815", confidence: 0.81, status: "confirmed", operator: "Сидорова Е.П.", comment: "Незначительная пористость, допустимо", defectType: "porosity" },
-        { time: "2023-06-15 14:05:47", id: "SL-4812", confidence: 0.89, status: "confirmed", operator: "Иванов А.С.", comment: "Продольная трещина средней глубины", defectType: "crack" },
-        { time: "2023-06-15 14:02:31", id: "SL-4809", confidence: 0.93, status: "confirmed", operator: "Автоматически", comment: "Автоматически подтверждено ИИ", defectType: "inclusion" },
-        { time: "2023-06-15 13:58:22", id: "SL-4805", confidence: 0.84, status: "rejected", operator: "Петров В.И.", comment: "Артефакт изображения, не дефект", defectType: "scratch" },
-        { time: "2023-06-15 13:54:10", id: "SL-4801", confidence: 0.91, status: "confirmed", operator: "Сидорова Е.П.", comment: "Глубокая трещина, полный брак", defectType: "crack" },
-        { time: "2023-06-15 13:50:33", id: "SL-4798", confidence: 0.76, status: "pending", operator: "Автоматически", comment: "Требуется дополнительная проверка", defectType: "porosity" },
-        { time: "2023-06-15 13:47:21", id: "SL-4795", confidence: 0.88, status: "confirmed", operator: "Иванов А.С.", comment: "Мелкие включения, допустимый уровень", defectType: "inclusion" },
-        { time: "2023-06-15 13:43:59", id: "SL-4792", confidence: 0.94, status: "confirmed", operator: "Иванов А.С.", comment: "Критичная трещина по всей длине", defectType: "crack" },
-        { time: "2023-06-15 13:40:17", id: "SL-4789", confidence: 0.79, status: "rejected", operator: "Петров В.И.", comment: "Отражение света, не является дефектом", defectType: "scratch" },
-        { time: "2023-06-15 13:36:44", id: "SL-4786", confidence: 0.85, status: "confirmed", operator: "Сидорова Е.П.", comment: "Поверхностная трещина, подлежит шлифовке", defectType: "crack" },
-        { time: "2023-06-15 13:33:12", id: "SL-4783", confidence: 0.90, status: "confirmed", operator: "Автоматически", comment: "Автоматически подтверждено ИИ", defectType: "crack" },
-        { time: "2023-06-15 13:29:38", id: "SL-4780", confidence: 0.82, status: "pending", operator: "Автоматически", comment: "Требуется проверка оператором", defectType: "porosity" },
-        { time: "2023-06-15 13:26:05", id: "SL-4777", confidence: 0.91, status: "confirmed", operator: "Иванов А.С.", comment: "Серьезный дефект, немедленный брак", defectType: "crack" },
-        { time: "2023-06-15 13:22:41", id: "SL-4774", confidence: 0.77, status: "rejected", operator: "Петров В.И.", comment: "Загрязнение на камере, не дефект слитка", defectType: "scratch" },
-        { time: "2023-06-15 13:19:27", id: "SL-4771", confidence: 0.89, status: "confirmed", operator: "Сидорова Е.П.", comment: "Включения шлака, требует переплавки", defectType: "inclusion" }
-    ];
-
+    
     // Состояния
+    const [activeTab, setActiveTab] = useState("inspections");
+
+    const [inspectionData, setInspectionData] = useState([]);
+    const [defectData, setDefectData] = useState([]);
+
     const [journalData, setJournalData] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -44,21 +27,70 @@ const Journal = () => {
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [reportType, setReportType] = useState('');
     const [reportData, setReportData] = useState(null);
-
-    const loadJournal = async () => {
-        setIsLoading(true);
+    const loadingRef = useRef(false);
+    const loadJournal = async ({ silent = false } = {}) => {
+        if (loadingRef.current) return;
+    
+        loadingRef.current = true;
+    
+        if (!silent) {
+            setIsLoading(true);
+        }
+    
         setError("");
     
         try {
-            const data = await api.getJournal();
+            const [inspections, defects] = await Promise.all([
+                api.getInspectionJournal({ limit: 100 }),
+                api.getDefectJournal({ limit: 100 }),
+            ]);
     
-            const mapped = (data.items || []).map((item) => ({
+            const mappedInspections = (inspections.items || []).map((item) => ({
+                type: "inspection",
+    
+                inspectionId: item.inspection_id,
+                defectDbId: item.defect_id,
+    
+                time: item.time ? item.time.replace("T", " ") : "",
+                shiftId: item.shift_id,
+                id: item.ingot_id,
+    
+                verdict: item.verdict,
+                hasDefect: item.has_defect,
+    
+                confidence: item.confidence || item.max_p_crack || 0,
+                maxPCrack: item.max_p_crack,
+                threshold: item.threshold,
+                mode: item.mode,
+                framesCount: item.frames_count,
+    
+                status: item.defect_status || "ok",
+                operator: item.has_defect ? "Автоматически" : "ИИ-контроль",
+                comment: item.comment || (item.has_defect ? "Требуется проверка оператором" : "Дефект не обнаружен"),
+    
+                defectType: item.defect_type || (item.has_defect ? "crack" : "ok"),
+    
+                bestFrameUrl: item.best_frame_url
+                    ? `${API_BASE_URL}${item.best_frame_url}`
+                    : null,
+            }));
+    
+            const mappedDefects = (defects.items || []).map((item) => ({
+                type: "defect",
+    
                 defectDbId: item.id,
                 inspectionId: item.inspection_id,
     
                 time: item.time ? item.time.replace("T", " ") : "",
+                shiftId: item.shift_id,
                 id: item.ingot_id,
+    
                 confidence: item.confidence || item.max_p_crack || 0,
+                maxPCrack: item.max_p_crack,
+                threshold: item.threshold,
+                mode: item.mode,
+                framesCount: item.frames_count,
+                verdict: item.verdict || "CRACK",
     
                 status: item.status || "pending",
                 operator: item.operator || "Автоматически",
@@ -66,67 +98,71 @@ const Journal = () => {
     
                 defectType: item.defect_type || "crack",
     
-                maxPCrack: item.max_p_crack,
-                threshold: item.threshold,
-                mode: item.mode,
-                framesCount: item.frames_count,
-                verdict: item.verdict,
-    
                 bestFrameUrl: item.best_frame_url
                     ? `${API_BASE_URL}${item.best_frame_url}`
                     : null,
             }));
     
-            setJournalData(mapped);
-            setFilteredData(mapped);
+            setInspectionData(mappedInspections);
+            setDefectData(mappedDefects);
         } catch (e) {
             setError(e?.message || "Не удалось загрузить журнал");
         } finally {
-            setIsLoading(false);
+            loadingRef.current = false;
+    
+            if (!silent) {
+                setIsLoading(false);
+            }
         }
+    };
+    const filterJournalData = (data) => {
+        let result = [...data];
+    
+        if (filters.defectType) {
+            result = result.filter((event) => event.defectType === filters.defectType);
+        }
+    
+        if (filters.status) {
+            result = result.filter((event) => event.status === filters.status);
+        }
+    
+        if (filters.operator) {
+            if (filters.operator === "ai") {
+                result = result.filter((event) => event.operator === "Автоматически" || event.operator === "ИИ-контроль");
+            } else if (filters.operator === "user") {
+                result = result.filter((event) => event.operator !== "Автоматически" && event.operator !== "ИИ-контроль");
+            }
+        }
+    
+        if (filters.confidence) {
+            if (filters.confidence === "high") {
+                result = result.filter((event) => event.confidence > 0.9);
+            } else if (filters.confidence === "medium") {
+                result = result.filter((event) => event.confidence >= 0.75 && event.confidence <= 0.9);
+            } else if (filters.confidence === "low") {
+                result = result.filter((event) => event.confidence < 0.75);
+            }
+        }
+    
+        return result;
     };
     // Функции для фильтрации
     const applyFilters = () => {
-        let result = [...journalData];
-
-        if (filters.defectType) {
-            result = result.filter(event => event.defectType === filters.defectType);
-        }
-
-        if (filters.status) {
-            result = result.filter(event => event.status === filters.status);
-        }
-
-        if (filters.operator) {
-            if (filters.operator === 'ai') {
-                result = result.filter(event => event.operator === 'Автоматически');
-            } else if (filters.operator === 'user') {
-                result = result.filter(event => event.operator !== 'Автоматически');
-            }
-        }
-
-        if (filters.confidence) {
-            if (filters.confidence === 'high') {
-                result = result.filter(event => event.confidence > 0.9);
-            } else if (filters.confidence === 'medium') {
-                result = result.filter(event => event.confidence >= 0.75 && event.confidence <= 0.9);
-            } else if (filters.confidence === 'low') {
-                result = result.filter(event => event.confidence < 0.75);
-            }
-        }
-
-        setFilteredData(result);
+        const data = activeTab === "inspections" ? inspectionData : defectData;
+    
+        setJournalData(data);
+        setFilteredData(filterJournalData(data));
         setCurrentPage(1);
     };
 
     const resetFilters = () => {
         setFilters({
-            defectType: '',
-            status: '',
-            operator: '',
-            confidence: ''
+            defectType: "",
+            status: "",
+            operator: "",
+            confidence: ""
         });
-        setFilteredData(journalData);
+    
         setCurrentPage(1);
     };
 
@@ -319,23 +355,47 @@ const Journal = () => {
     };
 
     const getStatusBadge = (status) => {
+        if (status === 'ok') {
+            return <span className="status-badge status-confirmed">OK</span>;
+        }
+    
         if (status === 'confirmed') {
             return <span className="status-badge status-confirmed">Подтверждено</span>;
-        } else if (status === 'rejected') {
-            return <span className="status-badge status-rejected">Отклонено</span>;
-        } else {
-            return <span className="status-badge status-pending">Ожидает</span>;
         }
+    
+        if (status === 'rejected') {
+            return <span className="status-badge status-rejected">Отклонено</span>;
+        }
+    
+        if (status === 'sent_to_mes') {
+            return <span className="status-badge status-confirmed">Передано в MES</span>;
+        }
+    
+        return <span className="status-badge status-pending">Ожидает</span>;
     };
 
     // Эффекты
-    useEffect(() => {
-        applyFilters();
-    }, [filters]);
-
+  
     useEffect(() => {
         loadJournal();
+    
+        const interval = setInterval(() => {
+            loadJournal();
+        }, 3000);
+    
+        return () => clearInterval(interval);
     }, []);
+
+    useEffect(() => {
+        const data = activeTab === "inspections" ? inspectionData : defectData;
+        const filtered = filterJournalData(data);
+    
+        setJournalData(data);
+        setFilteredData(filtered);
+    }, [activeTab, inspectionData, defectData, filters]);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, filters]);
 
 //    
 return (
@@ -346,6 +406,11 @@ return (
             userName="Оператор Иванов А.С."
             userRole="Смена #3 • 08:00-20:00"
             />
+        {error && (
+            <div style={{ color: "#f44336", padding: "12px 20px", fontWeight: "600" }}>
+                {error}
+            </div>
+        )}
 
         
         {/* Основное содержимое */}
@@ -353,6 +418,21 @@ return (
             {/* Левая панель - фильтры и отчеты */}
             <div className="journal-sidebar">
                 {/* Панель фильтров */}
+                <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+                    <button
+                        className={`filter-btn ${activeTab === "inspections" ? "primary" : "secondary"}`}
+                        onClick={() => setActiveTab("inspections")}
+                    >
+                        Все проверки
+                    </button>
+
+                    <button
+                        className={`filter-btn ${activeTab === "defects" ? "primary" : "secondary"}`}
+                        onClick={() => setActiveTab("defects")}
+                    >
+                        Дефектные события
+                    </button>
+                </div>
                 <div className="filters-panel">
                     <div className="panel-header">
                         <h2><i className="fas fa-filter"></i> Фильтрация событий</h2>
@@ -465,7 +545,10 @@ return (
             {/* Правая панель - журнал событий */}
             <div className="journal-main-panel">
                 <div className="panel-header">
-                    <h2><i className="fas fa-history"></i> Журнал событий контроля</h2>
+                <h2>
+                    <i className="fas fa-history"></i>{" "}
+                    {activeTab === "inspections" ? "Журнал проверок слитков" : "Журнал дефектных событий"}
+                </h2>
                     <div className="controls">
                         <div className="record-count">
                             Найдено {filteredData.length} записей
@@ -550,21 +633,25 @@ return (
                                                         <i className={`fas fa-${expandedComments[globalIndex] ? 'compress-alt' : 'expand-alt'}`}></i>
                                                     </button>
 
-                                                    <button 
-                                                        className="action-btn" 
-                                                        title="Подтвердить дефект"
-                                                        onClick={() => confirmEvent(event)}
-                                                    >
-                                                        <i className="fas fa-check"></i>
-                                                    </button>
+                                                    {event.type === "defect" && (
+                                                    <>
+                                                        <button 
+                                                            className="action-btn" 
+                                                            title="Подтвердить дефект"
+                                                            onClick={() => confirmEvent(event)}
+                                                        >
+                                                            <i className="fas fa-check"></i>
+                                                        </button>
 
-                                                    <button 
-                                                        className="action-btn" 
-                                                        title="Отклонить срабатывание"
-                                                        onClick={() => rejectEvent(event)}
-                                                    >
-                                                        <i className="fas fa-times"></i>
-                                                    </button>
+                                                        <button 
+                                                            className="action-btn" 
+                                                            title="Отклонить срабатывание"
+                                                            onClick={() => rejectEvent(event)}
+                                                        >
+                                                            <i className="fas fa-times"></i>
+                                                        </button>
+                                                    </>
+)}
                                                 </td>
                                             </tr>
                                         );

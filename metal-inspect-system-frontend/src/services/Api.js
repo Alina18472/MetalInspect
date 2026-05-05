@@ -47,6 +47,16 @@ async function request(path, { method = "GET", body, auth = true, headers = {} }
       (typeof data === "object" && data?.detail) ||
       (typeof data === "string" && data) ||
       "Request failed";
+  
+    if (res.status === 401 && path !== "/auth/login") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user_email");
+      localStorage.removeItem("role_id");
+      localStorage.removeItem("user");
+  
+      window.location.href = "/auth";
+    }
+  
     const err = new Error(msg);
     err.status = res.status;
     err.data = data;
@@ -55,7 +65,18 @@ async function request(path, { method = "GET", body, auth = true, headers = {} }
 
   return data;
 }
+function buildQuery(params = {}) {
+  const q = new URLSearchParams();
 
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "" && value !== "all") {
+      q.set(key, String(value));
+    }
+  });
+
+  const query = q.toString();
+  return query ? `?${query}` : "";
+}
 export const api = {
   loginJson: (email, password) =>
     request("/auth/login", {
@@ -136,6 +157,54 @@ export const api = {
   stopShift: () =>
     request("/ai/shift/stop", {
       method: "POST",
+    }),
+
+    // --- CAMERA ---
+  startCamera: ({ delaySec = 0.25 } = {}) =>
+    request(`/ai/camera/start?delay_sec=${encodeURIComponent(delaySec)}`, {
+      method: "POST",
+    }),
+
+  getCameraStatus: () =>
+    request("/ai/camera/status", {
+      method: "GET",
+    }),
+
+  stopCamera: () =>
+    request("/ai/camera/stop", {
+      method: "POST",
+    }),
+
+   // --- STATS ---
+  getCurrentShiftStats: () =>
+    request("/stats/current-shift", {
+      method: "GET",
+    }),
+
+  getStatsSummary: (params = {}) =>
+    request(`/stats/summary${buildQuery(params)}`, {
+      method: "GET",
+    }),
+
+  getShiftsStats: (params = {}) =>
+    request(`/stats/shifts${buildQuery(params)}`, {
+      method: "GET",
+    }),
+
+  getShiftDetails: (shiftId) =>
+    request(`/stats/shifts/${shiftId}`, {
+      method: "GET",
+    }),
+
+
+  getInspectionJournal: (params = {}) =>
+    request(`/journal/inspections${buildQuery(params)}`, {
+      method: "GET",
+    }),
+    
+  getDefectJournal: (params = {}) =>
+    request(`/journal${buildQuery(params)}`, {
+      method: "GET",
     }),
 };
 

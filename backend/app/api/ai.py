@@ -10,7 +10,7 @@ from app.services.shift_service import process_stream_folder, DEFAULT_STREAM_DIR
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.services.shift_service import save_stream_results_to_db
-
+from app.services.camera_runtime_service import camera_runtime_service
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
@@ -136,3 +136,27 @@ def stop_shift(
     current_user: User = Depends(get_current_user),
 ):
     return shift_runtime_service.stop_shift()
+
+@router.post("/camera/start")
+def start_camera(
+    delay_sec: float = 0.25,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return camera_runtime_service.start_camera(delay_sec=delay_sec)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/camera/status")
+def get_camera_status(
+    current_user: User = Depends(get_current_user),
+):
+    return camera_runtime_service.get_status()
+
+
+@router.post("/camera/stop")
+def stop_camera(
+    current_user: User = Depends(get_current_user),
+):
+    return camera_runtime_service.stop_camera()

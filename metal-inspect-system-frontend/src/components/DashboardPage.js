@@ -1,74 +1,195 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import "../styles/dashboard.css";
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
 
 const Dashboard = () => {
   const [shiftStatus, setShiftStatus] = useState(null);
+  const [cameraStatus, setCameraStatus] = useState(null);
+  const [cameraDelaySec, setCameraDelaySec] = useState("0.25");
+  const [liveFrame, setLiveFrame] = useState(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const analysisActiveRef = useRef(false);
   const [eventsData, setEventsData] = useState([]);
-
+  const [shiftStats, setShiftStats] = useState(null);
   const [mode, setMode] = useState("balanced");
   const [threshold, setThreshold] = useState("");
   const [delaySec, setDelaySec] = useState("0.7");
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-
+  const loadingDashboardRef = useRef(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // const loadDashboardData = async () => {
+  //   try {
+  //     const [status, camera, journal, currentShiftStats] = await Promise.all([
+  //       api.getShiftStatus(),
+  //       api.getCameraStatus(),
+  //       api.getJournal(),
+  //       api.getCurrentShiftStats(),
+  //     ]);
+      
+  //     setCameraStatus(camera);
+  //     setShiftStatus(status);
+  //     setShiftStats(currentShiftStats?.shift || null);
+  //     analysisActiveRef.current = !!status?.running;
+
+  //     const mappedEvents = (journal.items || []).map((item) => ({
+  //       defectDbId: item.id,
+  //       inspectionId: item.inspection_id,
+
+  //       time: item.time ? item.time.replace("T", " ") : "",
+  //       id: item.ingot_id,
+  //       confidence: item.confidence || item.max_p_crack || 0,
+
+  //       status: item.status || "pending",
+  //       operator: item.operator || "Автоматически",
+  //       comment: item.comment || "Требуется проверка оператором",
+
+  //       defectType: item.defect_type || "crack",
+  //       maxPCrack: item.max_p_crack,
+  //       threshold: item.threshold,
+  //       mode: item.mode,
+  //       framesCount: item.frames_count,
+  //       verdict: item.verdict,
+
+  //       bestFrameUrl: item.best_frame_url
+  //         ? `${API_BASE_URL}${item.best_frame_url}`
+  //         : null,
+  //     }));
+
+  //     setEventsData(mappedEvents.slice(0, 10));
+  //     setError("");
+  //   } catch (e) {
+  //     setError(e?.message || "Не удалось загрузить данные панели");
+  //   }
+  // };
   const loadDashboardData = async () => {
+    if (loadingDashboardRef.current) return;
+  
+    loadingDashboardRef.current = true;
+  
     try {
-      const [status, journal] = await Promise.all([
+      const [status, camera, journal, currentShiftStats] = await Promise.all([
         api.getShiftStatus(),
+        api.getCameraStatus(),
         api.getJournal(),
+        api.getCurrentShiftStats(),
       ]);
-
+  
+      setCameraStatus(camera);
       setShiftStatus(status);
-
+      setShiftStats(currentShiftStats?.shift || null);
+  
       const mappedEvents = (journal.items || []).map((item) => ({
         defectDbId: item.id,
         inspectionId: item.inspection_id,
-
         time: item.time ? item.time.replace("T", " ") : "",
         id: item.ingot_id,
         confidence: item.confidence || item.max_p_crack || 0,
-
         status: item.status || "pending",
         operator: item.operator || "Автоматически",
         comment: item.comment || "Требуется проверка оператором",
-
         defectType: item.defect_type || "crack",
         maxPCrack: item.max_p_crack,
         threshold: item.threshold,
         mode: item.mode,
         framesCount: item.frames_count,
         verdict: item.verdict,
-
         bestFrameUrl: item.best_frame_url
           ? `${API_BASE_URL}${item.best_frame_url}`
           : null,
       }));
-
+  
       setEventsData(mappedEvents.slice(0, 10));
       setError("");
     } catch (e) {
       setError(e?.message || "Не удалось загрузить данные панели");
+    } finally {
+      loadingDashboardRef.current = false;
     }
   };
 
+  // useEffect(() => {
+  //   loadDashboardData();
+
+  //   const interval = setInterval(() => {
+  //     loadDashboardData();
+  //   }, 300);
+
+  //   return () => clearInterval(interval);
+  // }, []);
   useEffect(() => {
     loadDashboardData();
-
-    const interval = setInterval(() => {
-      loadDashboardData();
-    }, 1500);
-
-    return () => clearInterval(interval);
+  }, []);
+  
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+  
+    if (!token) return;
+  
+    const wsBaseUrl = API_BASE_URL.replace(/^http/, "ws");
+    const ws = new WebSocket(
+      `${wsBaseUrl}/ws/shift?token=${encodeURIComponent(token)}`
+    );
+  
+    ws.onopen = () => {
+      setWsConnected(true);
+      console.log("WebSocket connected");
+    };
+  
+    ws.onclose = () => {
+      setWsConnected(false);
+      console.log("WebSocket disconnected");
+    };
+  
+    ws.onerror = (event) => {
+      setWsConnected(false);
+      console.warn("WebSocket error:", event);
+    };
+  
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+  
+        if (data.type === "shift_started") {
+          analysisActiveRef.current = true;
+        }
+  
+        if (
+          data.type === "shift_finished" ||
+          data.type === "shift_error" ||
+          data.type === "shift_stop_requested"
+        ) {
+          analysisActiveRef.current = false;
+        }
+  
+        if (data.type === "camera_frame") {
+          setLiveFrame(data);
+        }
+        
+        if (data.type === "ingot_result" || data.type === "defect_event") {
+          loadDashboardData();
+        }
+  
+      } catch (e) {
+        console.warn("Bad WebSocket message:", e);
+      }
+    };
+  
+    return () => {
+      ws.close();
+    };
   }, []);
 
   const handleStartShift = async () => {
+    if (!cameraStatus?.running) {
+      setError("Сначала запустите камеру.");
+      return;
+    }
     setIsLoading(true);
     setError("");
 
@@ -96,6 +217,36 @@ const Dashboard = () => {
       await loadDashboardData();
     } catch (e) {
       setError(e?.message || "Не удалось остановить смену");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  const handleStartCamera = async () => {
+    setIsLoading(true);
+    setError("");
+  
+    try {
+      await api.startCamera({
+        delaySec: Number(cameraDelaySec || 0.25),
+      });
+  
+      await loadDashboardData();
+    } catch (e) {
+      setError(e?.message || "Не удалось запустить камеру");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleStopCamera = async () => {
+    setIsLoading(true);
+    setError("");
+  
+    try {
+      await api.stopCamera();
+      await loadDashboardData();
+    } catch (e) {
+      setError(e?.message || "Не удалось остановить камеру");
     } finally {
       setIsLoading(false);
     }
@@ -171,14 +322,49 @@ const Dashboard = () => {
 
   const latestEvent = eventsData[0] || null;
 
-  const processedIngots = shiftStatus?.processed_ingots || 0;
-  const totalIngots = shiftStatus?.total_ingots || 0;
-  const totalCrack = shiftStatus?.total_crack || 0;
-  const totalOk = shiftStatus?.total_ok || 0;
-  const defectRate = shiftStatus?.defect_rate || 0;
+  const processedIngots =
+    shiftStats?.processed_ingots ?? shiftStatus?.processed_ingots ?? 0;
+
+  const totalIngots =
+    shiftStats?.processed_ingots ?? shiftStatus?.total_ingots ?? 0;
+
+  const totalCrack =
+    shiftStats?.total_crack ?? shiftStatus?.total_crack ?? 0;
+
+  const totalOk =
+    shiftStats?.total_ok ?? shiftStatus?.total_ok ?? 0;
+
+  const defectRate =
+    shiftStats?.defect_rate ?? shiftStatus?.defect_rate ?? 0;
+
+  const avgMaxPCrack = shiftStats?.avg_max_p_crack ?? 0;
+  const avgFrames = shiftStats?.avg_frames ?? 0;
+  const currentShiftId = shiftStats?.shift_id ?? shiftStatus?.shift_id ?? null;
 
   const modalStyle = isModalOpen ? { display: "flex" } : { display: "none" };
+  const liveFrameName =
+    liveFrame?.frame_name || cameraStatus?.current_frame_name;
 
+  const liveIngot =
+    liveFrame?.ingot_id || cameraStatus?.current_ingot;
+
+  const liveFrameIndex =
+    liveFrame?.frame_index || cameraStatus?.current_frame_index;
+
+  const liveFrameTotal =
+    liveFrame?.frame_total ||
+    (shiftStatus?.running ? shiftStatus?.current_frame_total : null);
+
+  const livePCrack =
+    liveFrame?.p_crack ??
+    shiftStatus?.current_p_crack ??
+    null;
+
+  const liveVerdict =
+    liveFrame?.frame_verdict ||
+    shiftStatus?.current_frame_verdict ||
+    null;
+  
   return (
     <div className="dashboard-page">
       <div className="dashboard-container">
@@ -204,31 +390,43 @@ const Dashboard = () => {
             </div>
 
             <div className="video-container">
-            {shiftStatus?.current_frame_url ? (
-                <img
-                    src={`${API_BASE_URL}${shiftStatus.current_frame_url}`}
-                    alt={shiftStatus.current_frame_name || "Текущий кадр"}
-                    style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                    display: "block",
-                    }}
-                />
-                ) : latestEvent?.bestFrameUrl ? (
-                <img
-                    src={latestEvent.bestFrameUrl}
-                    alt={`Лучший кадр ${latestEvent.id}`}
-                    style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                    display: "block",
-                    }}
-                />
-                ) : (
-                <div className="video-placeholder"></div>
-                )}
+            {liveFrame?.frame_url ? (
+            <img
+              src={`${API_BASE_URL}${liveFrame.frame_url}`}
+              alt={liveFrame.frame_name || "Кадр камеры"}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+          ) : cameraStatus?.current_frame_url ? (
+            <img
+              src={`${API_BASE_URL}${cameraStatus.current_frame_url}`}
+              alt={cameraStatus.current_frame_name || "Кадр камеры"}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+          ) : latestEvent?.bestFrameUrl ? (
+            <img
+              src={latestEvent.bestFrameUrl}
+              alt={`Лучший кадр ${latestEvent.id}`}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+          ) : (
+            <div className="video-placeholder"></div>
+          )}
+         
                
               <div className="video-overlay">
                 <div
@@ -245,38 +443,59 @@ const Dashboard = () => {
                   }}
                 >
                   <div>
+                    <strong>WebSocket:</strong>{" "}
+                    {wsConnected ? "подключён" : "отключён"}
+                  </div>
+
+                  <div>
+                    <strong>Камера:</strong>{" "}
+                    {cameraStatus?.running ? "работает" : "остановлена"}
+                  </div>
+                  <div>
+                    <strong>ID смены:</strong>{" "}
+                    {currentShiftId || "—"}
+                  </div>
+
+                  <div>
                     <strong>Статус смены:</strong>{" "}
                     {shiftStatus?.running ? "идёт обработка" : "не запущена / завершена"}
                   </div>
 
                   <div>
                     <strong>Текущий слиток:</strong>{" "}
-                    {shiftStatus?.current_ingot || "—"}
+                    {liveIngot || "—"}
                   </div>
+
                   <div>
                     <strong>Текущий кадр:</strong>{" "}
-                    {shiftStatus?.current_frame_name || "—"}
-                    </div>
+                    {liveFrameName || "—"}
+                  </div>
 
-                    <div>
+                  <div>
                     <strong>Кадр в слитке:</strong>{" "}
-                    {shiftStatus?.current_frame_index && shiftStatus?.current_frame_total
-                        ? `${shiftStatus.current_frame_index}/${shiftStatus.current_frame_total}`
-                        : "—"}
-                    </div>
+                    {liveFrameIndex || "—"}
+                  </div>
 
-                    <div>
+                  {/* <div>
                     <strong>p_crack кадра:</strong>{" "}
-                    {shiftStatus?.current_p_crack !== null &&
-                    shiftStatus?.current_p_crack !== undefined
-                        ? Number(shiftStatus.current_p_crack).toFixed(3)
-                        : "—"}
-                    </div>
+                    {livePCrack !== null && livePCrack !== undefined
+                      ? Number(livePCrack).toFixed(3)
+                      : "—"}
+                  </div>
 
-                    <div>
+                  <div>
                     <strong>Вердикт кадра:</strong>{" "}
-                    {shiftStatus?.current_frame_verdict || "—"}
+                    {liveVerdict || "—"}
+                  </div> */}
+
+                  {shiftStatus?.last_result && (
+                    <div>
+                      <strong>Последний результат AI:</strong>{" "}
+                      {shiftStatus.last_result.ingot_id} —{" "}
+                      {shiftStatus.last_result.verdict}, max_p_crack=
+                      {Number(shiftStatus.last_result.max_p_crack || 0).toFixed(3)}
                     </div>
+                  )}
 
                   <div>
                     <strong>Прогресс:</strong> {processedIngots} / {totalIngots}
@@ -355,8 +574,44 @@ const Dashboard = () => {
                     color: "#e0e0e0",
                   }}
                 />
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.05"
+                  placeholder="camera delay"
+                  value={cameraDelaySec}
+                  onChange={(e) => setCameraDelaySec(e.target.value)}
+                  disabled={cameraStatus?.running}
+                  style={{
+                    width: "110px",
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(60,120,180,0.4)",
+                    background: "rgba(20,30,45,0.9)",
+                    color: "#e0e0e0",
+                  }}
+                />
+
+                  {!cameraStatus?.running ? (
+                    <button
+                      className="control-btn secondary"
+                      onClick={handleStartCamera}
+                      disabled={isLoading}
+                    >
+                      <i className="fas fa-video"></i> Запустить камеру
+                    </button>
+                  ) : (
+                    <button
+                      className="control-btn secondary"
+                      onClick={handleStopCamera}
+                      disabled={isLoading || shiftStatus?.running}
+                    >
+                      <i className="fas fa-video-slash"></i> Остановить камеру
+                    </button>
+                  )}
 
                 {!shiftStatus?.running ? (
+
                   <button
                     className="control-btn"
                     onClick={handleStartShift}
@@ -430,6 +685,15 @@ const Dashboard = () => {
               <div className="stat-card">
                 <div className="stat-value">{defectRate.toFixed(1)}%</div>
                 <div className="stat-label">Доля дефектных</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{avgMaxPCrack.toFixed(3)}</div>
+                <div className="stat-label">Средний max_p_crack</div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-value">{avgFrames.toFixed(2)}</div>
+                <div className="stat-label">Среднее кадров</div>
               </div>
             </div>
 

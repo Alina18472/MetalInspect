@@ -2,10 +2,10 @@ import threading
 import time
 from datetime import datetime
 from typing import Optional
-
+from app.core.ws_manager import shift_ws_manager
 from PIL import Image as PILImage
 from sqlalchemy.orm import Session
-
+from app.services.camera_runtime_service import camera_runtime_service
 from app.core.database import SessionLocal
 from app.models.inspection import Inspection
 from app.models.defect import Defect
@@ -16,9 +16,13 @@ from app.services.shift_service import (
     list_images,
     group_images_by_ingot,
     save_best_frame,
+    extract_ingot_id,
 )
 from pathlib import Path
 from urllib.parse import quote
+from app.models.shift import Shift
+
+
 def stream_image_path_to_url(file_path: str | None) -> str | None:
         if not file_path:
             return None
@@ -75,6 +79,7 @@ class ShiftRuntimeService:
 
             "error": None,
             "message": "Смена не запущена",
+            "shift_id": None,
         }
 
     def get_status(self):
@@ -114,7 +119,11 @@ class ShiftRuntimeService:
         with self._lock:
             if self._status["running"]:
                 raise RuntimeError("Смена уже запущена")
-
+            shift_id = create_shift_record(
+                user_id=user_id,
+                mode=mode,
+                threshold=float(threshold),
+            )
             self._stop_requested = False
             self._status = self._initial_status()
             self._status.update({
@@ -124,11 +133,13 @@ class ShiftRuntimeService:
                 "mode": mode,
                 "threshold": float(threshold),
                 "message": "Смена запущена",
+                "shift_id": shift_id,
             })
 
         self._thread = threading.Thread(
             target=self._run_shift_worker,
             kwargs={
+                "shift_id": shift_id,
                 "user_id": user_id,
                 "mode": mode,
                 "threshold": float(threshold),
@@ -137,6 +148,13 @@ class ShiftRuntimeService:
             daemon=True,
         )
         self._thread.start()
+        
+        shift_ws_manager.broadcast_json({
+            "type": "shift_started",
+            "mode": mode,
+            "threshold": float(threshold),
+            "message": "AI-анализ смены запущен",
+        })
 
         return self.get_status()
 
@@ -151,6 +169,11 @@ class ShiftRuntimeService:
             self._stop_requested = True
             self._status["stop_requested"] = True
             self._status["message"] = "Запрошена остановка смены"
+            
+        shift_ws_manager.broadcast_json({
+            "type": "shift_stop_requested",
+            "message": "Запрошена остановка смены",
+        })
 
         return self.get_status()
 
@@ -160,6 +183,7 @@ class ShiftRuntimeService:
 
     def _run_shift_worker(
         self,
+        shift_id: int,
         user_id: int,
         mode: str,
         threshold: float,
@@ -169,97 +193,260 @@ class ShiftRuntimeService:
             files = list_images(DEFAULT_STREAM_DIR)
             grouped, skipped = group_images_by_ingot(files)
 
+            if not grouped:
+                raise RuntimeError("В stream_images не найдено слитков для обработки")
+
+            if not camera_runtime_service.get_status().get("running"):
+                camera_runtime_service.start_camera(delay_sec=0.25)
+
+            camera_current_path = camera_runtime_service.get_current_frame_path()
+            camera_current_ingot = None
+
+            if camera_current_path:
+                try:
+                    camera_current_ingot = extract_ingot_id(camera_current_path)
+                except Exception:
+                    camera_current_ingot = None
+
+            ordered_ingot_ids = sorted(grouped.keys())
+
+            current_pos = -1
+            if camera_current_ingot in ordered_ingot_ids:
+                current_pos = ordered_ingot_ids.index(camera_current_ingot)
+
+            start_pos = (current_pos + 1) % len(ordered_ingot_ids)
+            ordered_ingot_ids = ordered_ingot_ids[start_pos:] + ordered_ingot_ids[:start_pos]
+
+            ingots_per_cycle = len(grouped)
+
             self._set_status(
-                total_ingots=len(grouped),
+                total_ingots=ingots_per_cycle,
+                ingots_per_cycle=ingots_per_cycle,
+                processed_ingots=0,
+                total_crack=0,
+                total_ok=0,
                 skipped_files_count=len(skipped),
                 skipped_files=skipped,
-                message=f"Найдено слитков: {len(grouped)}",
+                camera_ingot_at_start=camera_current_ingot,
+                analysis_first_ingot=ordered_ingot_ids[0] if ordered_ingot_ids else None,
+                current_cycle=1,
+                current_sequence_number=0,
+                message=f"Найдено слитков в одном цикле: {ingots_per_cycle}",
             )
 
-            for ingot_id, ingot_files in sorted(grouped.items()):
+            shift_ws_manager.broadcast_json({
+                "type": "shift_analysis_started",
+                "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                "shift_id": shift_id,
+                "ingots_per_cycle": ingots_per_cycle,
+                "camera_ingot_at_start": camera_current_ingot,
+                "analysis_first_ingot": ordered_ingot_ids[0] if ordered_ingot_ids else None,
+                "message": "Анализ смены запущен",
+            })
+
+            cycle_number = 1
+            sequence_number = 0
+
+            while True:
                 with self._lock:
                     if self._stop_requested:
                         break
 
-                self._set_status(
-                    current_ingot=ingot_id,
-                    message=f"Обработка {ingot_id}",
-                )
+                for source_ingot_id in ordered_ingot_ids:
+                    with self._lock:
+                        if self._stop_requested:
+                            break
 
-                def on_frame(frame_info: dict):
+                    sequence_number += 1
+                    system_ingot_id = f"SHIFT-{shift_id:05d}-INGOT-{sequence_number:06d}"
+                    ingot_files = grouped[source_ingot_id]
+
                     self._set_status(
-                        current_ingot=frame_info["ingot_id"],
-                        current_frame_name=frame_info["frame_name"],
-                        current_frame_url=frame_info["frame_url"],
-                        current_frame_index=frame_info["frame_index"],
-                        current_frame_total=frame_info["frame_total"],
-                        current_p_crack=frame_info["p_crack"],
-                        current_frame_verdict=frame_info["frame_verdict"],
+                        current_ingot=system_ingot_id,
+                        current_source_ingot=source_ingot_id,
+                        current_cycle=cycle_number,
+                        current_sequence_number=sequence_number,
                         message=(
-                            f"{frame_info['ingot_id']} | кадр "
-                            f"{frame_info['frame_index']}/{frame_info['frame_total']} | "
-                            f"p_crack={frame_info['p_crack']:.3f} | "
-                            f"{frame_info['frame_verdict']}"
+                            f"Обработка {system_ingot_id} "
+                            f"(источник кадров: {source_ingot_id}, цикл {cycle_number})"
                         ),
                     )
 
-                result = process_one_ingot(
-                    ingot_id=ingot_id,
-                    ingot_files=ingot_files,
-                    mode=mode,
-                    threshold=threshold,
-                    on_frame=on_frame,
-                )
+                    def on_frame(frame_info: dict):
+                        self._set_status(
+                            current_ingot=frame_info["ingot_id"],
+                            current_source_ingot=source_ingot_id,
+                            current_frame_name=frame_info["frame_name"],
+                            current_frame_url=frame_info["frame_url"],
+                            current_frame_index=frame_info["frame_index"],
+                            current_frame_total=frame_info["frame_total"],
+                            current_p_crack=frame_info["p_crack"],
+                            current_frame_verdict=frame_info["frame_verdict"],
+                            message=(
+                                f"{frame_info['ingot_id']} | источник {source_ingot_id} | "
+                                f"кадр {frame_info['frame_index']}/{frame_info['frame_total']} | "
+                                f"p_crack={frame_info['p_crack']:.3f} | "
+                                f"{frame_info['frame_verdict']}"
+                            ),
+                        )
 
-                db = SessionLocal()
-                try:
-                    saved = save_one_ingot_result_to_db(
-                        db=db,
-                        result=result,
-                        user_id=user_id,
+                        shift_ws_manager.broadcast_json({
+                            "type": "analysis_frame",
+                            "source": "analysis",
+                            "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                            "shift_id": shift_id,
+                            "ingot_id": frame_info["ingot_id"],
+                            "source_ingot_id": source_ingot_id,
+                            "cycle_number": cycle_number,
+                            "sequence_number": sequence_number,
+                            "frame_name": frame_info["frame_name"],
+                            "frame_url": frame_info["frame_url"],
+                            "frame_index": frame_info["frame_index"],
+                            "frame_total": frame_info["frame_total"],
+                            "p_crack": frame_info["p_crack"],
+                            "frame_verdict": frame_info["frame_verdict"],
+                        })
+
+                    result = process_one_ingot(
+                        ingot_id=system_ingot_id,
+                        ingot_files=ingot_files,
+                        mode=mode,
+                        threshold=threshold,
+                        on_frame=on_frame,
                     )
-                finally:
-                    db.close()
 
-                with self._lock:
-                    self._status["processed_ingots"] += 1
+                    result["source_ingot_id"] = source_ingot_id
+                    result["cycle_number"] = cycle_number
+                    result["sequence_number"] = sequence_number
+
+                    db = SessionLocal()
+                    try:
+                        saved = save_one_ingot_result_to_db(
+                            db=db,
+                            result=result,
+                            user_id=user_id,
+                            shift_id=shift_id,
+                        )
+                    finally:
+                        db.close()
+
+                    db = SessionLocal()
+                    try:
+                        update_shift_stats(db=db, shift_id=shift_id)
+                    finally:
+                        db.close()
+
+                    with self._lock:
+                        self._status["processed_ingots"] += 1
+
+                        if result["verdict"] == "CRACK":
+                            self._status["total_crack"] += 1
+                        else:
+                            self._status["total_ok"] += 1
+
+                        self._status["last_result"] = result
+                        self._status["last_saved"] = saved
+                        self._status["message"] = (
+                            f"{system_ingot_id} обработан: {result['verdict']} "
+                            f"(max_p_crack={result['max_p_crack']:.3f})"
+                        )
+
+                    shift_ws_manager.broadcast_json({
+                        "type": "ingot_result",
+                        "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                        "shift_id": shift_id,
+                        "ingot_id": result["ingot_id"],
+                        "source_ingot_id": result["source_ingot_id"],
+                        "cycle_number": result["cycle_number"],
+                        "sequence_number": result["sequence_number"],
+                        "verdict": result["verdict"],
+                        "max_p_crack": result["max_p_crack"],
+                        "threshold": result["threshold"],
+                        "mode": result["mode"],
+                        "frames_count": result["frames_count"],
+                        "inspection_id": saved.get("inspection_id") if saved else None,
+                        "defect_id": saved.get("defect_id") if saved else None,
+                    })
 
                     if result["verdict"] == "CRACK":
-                        self._status["total_crack"] += 1
-                    else:
-                        self._status["total_ok"] += 1
+                        shift_ws_manager.broadcast_json({
+                            "type": "defect_event",
+                            "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                            "shift_id": shift_id,
+                            "ingot_id": result["ingot_id"],
+                            "source_ingot_id": result["source_ingot_id"],
+                            "cycle_number": result["cycle_number"],
+                            "sequence_number": result["sequence_number"],
+                            "max_p_crack": result["max_p_crack"],
+                            "defect_id": saved.get("defect_id") if saved else None,
+                            "message": f"Обнаружен дефект: {result['ingot_id']}",
+                        })
 
-                    self._status["last_result"] = result
-                    self._status["last_saved"] = saved
-                    self._status["message"] = (
-                        f"{ingot_id} обработан: {result['verdict']} "
-                        f"(max_p_crack={result['max_p_crack']:.3f})"
-                    )
+                    if delay_sec > 0:
+                        time.sleep(delay_sec)
 
-                time.sleep(delay_sec)
-
-            with self._lock:
-                was_stopped = self._stop_requested
+                cycle_number += 1
 
             self._set_status(
                 running=False,
                 stop_requested=False,
                 current_ingot=None,
+                current_source_ingot=None,
                 finished_at=datetime.utcnow().isoformat(timespec="seconds"),
-                message="Смена остановлена пользователем" if was_stopped else "Смена завершена",
+                message="Смена остановлена пользователем",
             )
+
+            shift_ws_manager.broadcast_json({
+                "type": "shift_finished",
+                "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                "shift_id": shift_id,
+                "stopped_by_user": True,
+                "message": "Смена остановлена пользователем",
+            })
+
+            db = SessionLocal()
+            try:
+                update_shift_stats(
+                    db=db,
+                    shift_id=shift_id,
+                    status="stopped",
+                )
+            finally:
+                db.close()
 
         except Exception as e:
             self._set_status(
                 running=False,
                 stop_requested=False,
                 current_ingot=None,
+                current_source_ingot=None,
                 finished_at=datetime.utcnow().isoformat(timespec="seconds"),
                 error=str(e),
                 message=f"Ошибка обработки смены: {e}",
             )
 
+            try:
+                db = SessionLocal()
+                try:
+                    current_shift_id = self._status.get("shift_id") or shift_id
+                    if current_shift_id:
+                        update_shift_stats(
+                            db=db,
+                            shift_id=current_shift_id,
+                            status="error",
+                            error_message=str(e),
+                        )
+                finally:
+                    db.close()
+            except Exception:
+                pass
 
+            shift_ws_manager.broadcast_json({
+                "type": "shift_error",
+                "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+                "shift_id": shift_id,
+                "message": str(e),
+            })
 def process_one_ingot(
     ingot_id: str,
     ingot_files: list[str],
@@ -303,8 +490,7 @@ def process_one_ingot(
                 "frame_url": stream_image_path_to_url(img_path),
             })
 
-        # небольшая пауза внутри слитка, чтобы на экране было видно смену кадров
-        time.sleep(0.15)
+     
 
     verdict = "CRACK" if max_p_crack >= float(threshold) else "OK"
 
@@ -332,12 +518,16 @@ def save_one_ingot_result_to_db(
     db: Session,
     result: dict,
     user_id: int | None = None,
+    shift_id: int | None = None,
 ):
     verdict = result["verdict"]
     has_defect = verdict == "CRACK"
 
     inspection = Inspection(
         ingot_id=result["ingot_id"],
+        source_ingot_id=result.get("source_ingot_id"),
+        cycle_number=result.get("cycle_number"),
+        sequence_number=result.get("sequence_number"),
         has_defect=has_defect,
         verdict=verdict,
         confidence=float(result["max_p_crack"]),
@@ -347,7 +537,9 @@ def save_one_ingot_result_to_db(
         frames_count=int(result["frames_count"]),
         started_at=datetime.utcnow(),
         finished_at=datetime.utcnow(),
+        shift_id=shift_id,
         created_by=user_id,
+        
     )
 
     db.add(inspection)
@@ -388,3 +580,70 @@ def save_one_ingot_result_to_db(
 
 
 shift_runtime_service = ShiftRuntimeService()
+def update_shift_stats(
+    db: Session,
+    shift_id: int,
+    status: str | None = None,
+    error_message: str | None = None,
+):
+    shift = db.query(Shift).filter(Shift.id == shift_id).first()
+
+    if not shift:
+        return
+
+    inspections = db.query(Inspection).filter(Inspection.shift_id == shift_id).all()
+
+    processed = len(inspections)
+    total_crack = sum(1 for i in inspections if i.has_defect)
+    total_ok = processed - total_crack
+
+    sum_max_p = sum(float(i.max_p_crack or 0) for i in inspections)
+    sum_frames = sum(int(i.frames_count or 0) for i in inspections)
+
+    shift.processed_ingots = processed
+    shift.total_ingots = processed
+    shift.total_crack = total_crack
+    shift.total_ok = total_ok
+
+    shift.defect_rate = (total_crack / processed * 100.0) if processed > 0 else 0.0
+    shift.avg_max_p_crack = (sum_max_p / processed) if processed > 0 else 0.0
+    shift.avg_frames = (sum_frames / processed) if processed > 0 else 0.0
+
+    if status:
+        shift.status = status
+
+    if error_message:
+        shift.error_message = error_message
+
+    if status in ("finished", "stopped", "error"):
+        shift.finished_at = datetime.utcnow()
+
+    db.commit()
+def create_shift_record(
+    user_id: int,
+    mode: str,
+    threshold: float,
+) -> int:
+    db = SessionLocal()
+    try:
+        shift = Shift(
+            status="running",
+            mode=mode,
+            threshold=float(threshold),
+            started_by=user_id,
+            total_ingots=0,
+            processed_ingots=0,
+            total_crack=0,
+            total_ok=0,
+            defect_rate=0.0,
+            avg_max_p_crack=0.0,
+            avg_frames=0.0,
+        )
+
+        db.add(shift)
+        db.commit()
+        db.refresh(shift)
+
+        return shift.id
+    finally:
+        db.close()

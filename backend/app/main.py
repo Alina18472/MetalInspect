@@ -7,6 +7,8 @@ from app.api.journal import router as journal_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router  # NEW
 from app.api.ai import router as ai_router
+from app.api.ws import router as ws_router
+from app.api.stats import router as stats_router
 app = FastAPI()
 origins = [
     "http://localhost:3000",
@@ -24,5 +26,7 @@ app.include_router(auth_router)
 app.include_router(users_router)  # NEW
 app.include_router(ai_router)
 app.include_router(journal_router)
+app.include_router(ws_router)
+app.include_router(stats_router)
 app.mount("/media", StaticFiles(directory="media"), name="media")
 app.mount("/stream-images", StaticFiles(directory="stream_images"), name="stream_images")

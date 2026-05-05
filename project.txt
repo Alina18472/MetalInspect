@@ -125,5 +125,120 @@ Metal_Inspect_0/
 ├── docker-compose.yml       # для базы данных postgres
 └── .gitignore
 
+Metal_Inspect_0/
+├── .venv/                                # Единое Python-окружение для backend
+├── backend/                              # Backend-часть системы на FastAPI
+│   ├── alembic/                          # Миграции базы данных
+│   │   ├── versions/                     # Файлы миграций Alembic
+│   │   ├── env.py                        # Конфигурация окружения Alembic
+│   │   ├── README
+│   │   └── script.py.mako
+│   │
+│   ├── app/                              # Основной код backend-приложения
+│   │   ├── api/                          # API-роутеры FastAPI
+│   │   │   ├── ai.py                     # API для работы с ИИ-моделью / анализом изображений
+│   │   │   ├── auth.py                   # API авторизации и аутентификации
+│   │   │   ├── dashboard.py              # API для главной панели / сводных данных
+│   │   │   ├── journal.py                # API журнала событий и дефектов
+│   │   │   ├── stats.py                  # API статистики по проверкам и дефектам
+│   │   │   ├── users.py                  # API управления пользователями
+│   │   │   └── ws.py                     # WebSocket API для передачи событий в реальном времени
+│   │   │
+│   │   ├── core/                         # Базовые настройки и инфраструктурный код
+│   │   │   ├── config.py                 # Конфигурация приложения
+│   │   │   ├── database.py               # Подключение к базе данных
+│   │   │   ├── security.py               # Логика безопасности, JWT/пароли
+│   │   │   └── ws_manager.py             # Менеджер WebSocket-подключений
+│   │   │
+│   │   ├── models/                       # SQLAlchemy-модели базы данных
+│   │   │   ├── __init__.py               # Инициализация моделей
+│   │   │   ├── defect.py                 # Модель дефекта
+│   │   │   ├── image.py                  # Модель изображения / сохраненного кадра
+│   │   │   ├── inspection.py             # Модель проверки / события инспекции
+│   │   │   ├── role.py                   # Модель роли пользователя
+│   │   │   ├── shift.py                  # Модель производственной смены
+│   │   │   └── user.py                   # Модель пользователя
+│   │   │
+│   │   ├── schemas/                      # Pydantic-схемы для валидации данных
+│   │   │   ├── auth.py                   # Схемы авторизации
+│   │   │   └── user.py                   # Схемы пользователя
+│   │   │
+│   │   ├── services/                     # Сервисный слой backend
+│   │   │   ├── ai_service.py             # Сервис работы с нейросетевой моделью
+│   │   │   ├── camera_runtime_service.py # Логика эмуляции/обработки потока кадров
+│   │   │   ├── shift_runtime_service.py  # Runtime-логика текущей смены
+│   │   │   └── shift_service.py          # Логика работы со сменами
+│   │   │
+│   │   └── main.py                       # Точка входа FastAPI-приложения
+│   │
+│   ├── media/                            # Директория для сохраняемых изображений/кадров
+│   ├── models_ml/                        # Файлы обученных ML-моделей
+│   │   └── best_weighted.pt              # Обученная модель ResNet18
+│   ├── stream_images/                    # Изображения для эмуляции потока кадров
+│   ├── alembic.ini                       # Конфигурация Alembic
+│   ├── create_admin.py                   # Скрипт создания администратора
+│   └── requirements.txt                  # Python-зависимости backend
+│
+├── metal-inspect-system-frontend/        # Frontend-часть системы на React
+│   ├── node_modules/                     # Установленные npm-зависимости
+│   ├── public/                           # Публичные статические файлы React
+│   │   ├── index.html
+│   │   ├── logo192.png
+│   │   ├── logo512.png
+│   │   ├── manifest.json
+│   │   ├── robots.txt
+│   │   └── favicon.ico
+│   │
+│   ├── src/                              # Исходный код frontend-приложения
+│   │   ├── components/                   # React-компоненты и страницы
+│   │   │   ├── AccountPage.js            # Страница аккаунта пользователя
+│   │   │   ├── AdminAccountPage.js       # Страница аккаунта администратора
+│   │   │   ├── AiPanelPage.js            # Панель работы с ИИ-анализом
+│   │   │   ├── Auth.js                   # Страница авторизации
+│   │   │   ├── DashboardPage.js          # Главная панель мониторинга
+│   │   │   ├── JournalPage.js            # Журнал событий и дефектов
+│   │   │   ├── Layout.js                 # Общий layout приложения
+│   │   │   ├── ProtectedRoute.js         # Защита маршрутов для авторизованных пользователей
+│   │   │   ├── RoleRoute.js              # Ограничение доступа по роли пользователя
+│   │   │   ├── SettingsPage.js           # Страница настроек
+│   │   │   ├── StatisticPage.js          # Страница статистики
+│   │   │   └── TopNav.js                 # Верхняя навигационная панель
+│   │   │
+│   │   ├── context/                      # React Context
+│   │   │   └── AuthContext.js            # Контекст авторизации пользователя
+│   │   │
+│   │   ├── other/                        # Дополнительные frontend-файлы / вспомогательные элементы
+│   │   │
+│   │   ├── services/                     # Сервисы для работы с API
+│   │   │   └── Api.js                    # Настройка запросов к backend API
+│   │   │
+│   │   ├── styles/                       # CSS-стили страниц и компонентов
+│   │   │   ├── auth.css                  # Стили страницы авторизации
+│   │   │   ├── dashboard.css             # Стили главной панели
+│   │   │   ├── journal.css               # Стили журнала событий
+│   │   │   ├── ai_panel.css              # Стили панели ИИ-анализа
+│   │   │   ├── account.css               # Стили страницы аккаунта
+│   │   │   ├── statistic.css             # Стили страницы статистики
+│   │   │   └── settings.css              # Стили страницы настроек
+│   │   │
+│   │   ├── App.css                       # Общие стили приложения
+│   │   ├── App.js                        # Основной компонент React-приложения
+│   │   ├── App.test.js                   # Тестовый файл React
+│   │   ├── index.css                     # Глобальные стили
+│   │   ├── index.js                      # Точка входа React-приложения
+│   │   ├── logo.svg
+│   │   ├── reportWebVitals.js
+│   │   └── setupTests.js
+│   │
+│   ├── .env                              # Переменные окружения frontend
+│   ├── package.json                      # npm-зависимости и команды запуска
+│   ├── package-lock.json                 # Зафиксированные версии npm-зависимостей
+│   └── README.md
+│
+├── docker-compose.yml                    # Конфигурация Docker для PostgreSQL
+├── project.txt                           # Дополнительное описание / заметки по проекту
+└── .gitignore                            # Исключения для Git
+
+
 
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

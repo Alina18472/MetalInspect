@@ -16,6 +16,10 @@ class Inspection(Base):
     __tablename__ = "inspections"
 
     id = Column(Integer, primary_key=True)
+    
+    source_ingot_id = Column(String(100), nullable=True)
+    cycle_number = Column(Integer, nullable=True)
+    sequence_number = Column(Integer, nullable=True)
 
     # ID условного слитка из имени файлов: ingot_001, ingot_002 и т.д.
     ingot_id = Column(String(100), nullable=True, index=True)
@@ -37,7 +41,8 @@ class Inspection(Base):
 
     # Сколько кадров вошло в сессию слитка
     frames_count = Column(Integer)
-
+    shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=True, index=True)
+    shift = relationship("Shift", back_populates="inspections")
     created_by = Column(Integer, ForeignKey("users.id"))
 
     defects = relationship(

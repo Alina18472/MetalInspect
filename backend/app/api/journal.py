@@ -1,105 +1,254 @@
-import os
-from pathlib import Path
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.models.inspection import Inspection
 from app.models.defect import Defect
+from app.models.image import Image as InspectionImage
 
 
 router = APIRouter(prefix="/journal", tags=["journal"])
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-MEDIA_DIR = BACKEND_DIR / "media"
+def date_start(value: Optional[date]):
+    if value is None:
+        return None
+    return datetime.combine(value, time.min)
 
 
-def file_path_to_media_url(file_path: str | None) -> str | None:
+def date_end_exclusive(value: Optional[date]):
+    if value is None:
+        return None
+    return datetime.combine(value + timedelta(days=1), time.min)
+
+
+def media_path_to_url(file_path: str | None) -> str | None:
     if not file_path:
         return None
 
-    try:
-        path = Path(file_path)
-        rel = path.relative_to(MEDIA_DIR)
-        return "/media/" + rel.as_posix()
-    except Exception:
-        # запасной вариант, если путь почему-то не относительно backend/media
-        return "/media/best_frames/" + os.path.basename(file_path)
+    normalized = file_path.replace("\\", "/")
+    marker = "/media/"
+
+    if marker in normalized:
+        return normalized[normalized.index(marker):]
+
+    if normalized.startswith("media/"):
+        return "/" + normalized
+
+    return None
 
 
-def defect_to_dict(defect: Defect) -> dict:
-    inspection = defect.inspection
+def inspection_to_dict(inspection: Inspection, db: Session) -> dict:
+    defect = (
+        db.query(Defect)
+        .filter(Defect.inspection_id == inspection.id)
+        .first()
+    )
 
-    best_frame = None
-    if defect.images:
-        for img in defect.images:
-            if img.image_type == "best_frame":
-                best_frame = img
-                break
+    image = None
+    if defect:
+        image = (
+            db.query(InspectionImage)
+            .filter(InspectionImage.defect_id == defect.id)
+            .order_by(InspectionImage.id.desc())
+            .first()
+        )
 
-        if best_frame is None:
-            best_frame = defect.images[0]
+    status = None
+    comment = None
+    defect_id = None
 
-    operator = "Автоматически"
-    if defect.confirmed_by:
-        operator = f"Пользователь #{defect.confirmed_by}"
+    if defect:
+        defect_id = defect.id
+        status = getattr(defect, "status", None) or (
+            "confirmed" if defect.is_confirmed else "pending"
+        )
+        comment = getattr(defect, "comment", None)
+    else:
+        status = "ok"
+        comment = "Дефект не обнаружен"
+
+    return {
+        "inspection_id": inspection.id,
+        "shift_id": inspection.shift_id,
+
+        "time": inspection.finished_at.isoformat(timespec="seconds")
+        if inspection.finished_at
+        else inspection.started_at.isoformat(timespec="seconds")
+        if inspection.started_at
+        else None,
+
+        "ingot_id": inspection.ingot_id,
+        "verdict": inspection.verdict,
+        "has_defect": bool(inspection.has_defect),
+
+        "confidence": float(inspection.confidence or 0),
+        "max_p_crack": float(inspection.max_p_crack or 0),
+        "threshold": float(inspection.threshold or 0),
+        "mode": inspection.mode,
+        "frames_count": inspection.frames_count,
+
+        "defect_id": defect_id,
+        "defect_type": defect.defect_type if defect else None,
+        "defect_status": status,
+        "comment": comment,
+
+        "best_frame_url": media_path_to_url(image.file_path) if image else None,
+    }
+
+
+@router.get("/inspections")
+def get_inspections_journal(
+    limit: int = Query(default=100, ge=1, le=500),
+    shift_id: Optional[int] = Query(default=None),
+    verdict: Optional[str] = Query(default=None),
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(Inspection)
+
+    if shift_id:
+        query = query.filter(Inspection.shift_id == shift_id)
+
+    if verdict and verdict != "all":
+        query = query.filter(Inspection.verdict == verdict)
+
+    start_dt = date_start(date_from)
+    end_dt = date_end_exclusive(date_to)
+
+    if start_dt:
+        query = query.filter(Inspection.started_at >= start_dt)
+
+    if end_dt:
+        query = query.filter(Inspection.started_at < end_dt)
+
+    inspections = (
+        query
+        .order_by(Inspection.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": len(inspections),
+        "items": [inspection_to_dict(i, db) for i in inspections],
+    }
+def defect_to_dict(defect: Defect, db: Session) -> dict:
+    inspection = (
+        db.query(Inspection)
+        .filter(Inspection.id == defect.inspection_id)
+        .first()
+    )
+
+    image = (
+        db.query(InspectionImage)
+        .filter(InspectionImage.defect_id == defect.id)
+        .order_by(InspectionImage.id.desc())
+        .first()
+    )
+
+    status = getattr(defect, "status", None) or (
+        "confirmed" if defect.is_confirmed else "pending"
+    )
+
+    comment = getattr(defect, "comment", None)
+    if not comment:
+        if status == "confirmed":
+            comment = "Трещина подтверждена"
+        elif status == "rejected":
+            comment = "Ложное срабатывание"
+        else:
+            comment = "Требуется проверка оператором"
 
     return {
         "id": defect.id,
-        "inspection_id": inspection.id if inspection else None,
+        "defect_id": defect.id,
 
-        "time": defect.created_at.isoformat(timespec="seconds") if defect.created_at else None,
+        "inspection_id": defect.inspection_id,
+        "shift_id": inspection.shift_id if inspection else None,
+
+        "time": defect.created_at.isoformat(timespec="seconds")
+        if defect.created_at
+        else inspection.finished_at.isoformat(timespec="seconds")
+        if inspection and inspection.finished_at
+        else None,
+
         "ingot_id": inspection.ingot_id if inspection else None,
 
         "defect_type": defect.defect_type or "crack",
         "confidence": float(defect.confidence or 0),
-        "max_p_crack": float(inspection.max_p_crack or 0) if inspection else float(defect.confidence or 0),
 
-        "threshold": float(inspection.threshold or 0) if inspection else None,
+        "max_p_crack": float(inspection.max_p_crack or 0) if inspection else float(defect.confidence or 0),
+        "threshold": float(inspection.threshold or 0) if inspection else 0,
         "mode": inspection.mode if inspection else None,
         "frames_count": inspection.frames_count if inspection else None,
-        "verdict": inspection.verdict if inspection else None,
+        "verdict": inspection.verdict if inspection else "CRACK",
 
-        "status": defect.status or "pending",
+        "status": status,
         "is_confirmed": bool(defect.is_confirmed),
+        "operator": f"Пользователь #{defect.confirmed_by}" if defect.confirmed_by else "Автоматически",
+        "comment": comment,
 
-        "operator": operator,
-        "comment": defect.engineer_comment or "Требуется проверка оператором",
-
-        "best_frame_path": best_frame.file_path if best_frame else None,
-        "best_frame_url": file_path_to_media_url(best_frame.file_path) if best_frame else None,
+        "best_frame_path": image.file_path if image else None,
+        "best_frame_url": media_path_to_url(image.file_path) if image else None,
     }
 
 
 @router.get("")
-def get_journal(
+def get_defects_journal(
+    limit: int = Query(default=100, ge=1, le=500),
+    shift_id: Optional[int] = Query(default=None),
+    status: Optional[str] = Query(default=None),
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    defects = (
+    query = (
         db.query(Defect)
-        .options(
-            joinedload(Defect.inspection),
-            joinedload(Defect.images),
-        )
-        .order_by(Defect.created_at.desc())
+        .join(Inspection, Defect.inspection_id == Inspection.id)
+    )
+
+    if shift_id:
+        query = query.filter(Inspection.shift_id == shift_id)
+
+    if status and status != "all":
+        query = query.filter(Defect.status == status)
+
+    start_dt = date_start(date_from)
+    end_dt = date_end_exclusive(date_to)
+
+    if start_dt:
+        query = query.filter(Inspection.started_at >= start_dt)
+
+    if end_dt:
+        query = query.filter(Inspection.started_at < end_dt)
+
+    defects = (
+        query
+        .order_by(Defect.id.desc())
+        .limit(limit)
         .all()
     )
 
     return {
         "total": len(defects),
-        "items": [defect_to_dict(d) for d in defects],
+        "items": [defect_to_dict(d, db) for d in defects],
     }
-
 
 @router.post("/{defect_id}/confirm")
 def confirm_defect(
     defect_id: int,
-    comment: str | None = None,
+    comment: str = Query(default="Трещина подтверждена"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -111,31 +260,26 @@ def confirm_defect(
     defect.status = "confirmed"
     defect.is_confirmed = True
     defect.confirmed_by = current_user.id
-    defect.confirmed_at = datetime.utcnow()
-
-    if comment:
-        defect.engineer_comment = comment
+    defect.comment = comment
 
     db.commit()
     db.refresh(defect)
 
-    defect = (
-        db.query(Defect)
-        .options(
-            joinedload(Defect.inspection),
-            joinedload(Defect.images),
-        )
-        .filter(Defect.id == defect_id)
-        .first()
-    )
-
-    return defect_to_dict(defect)
+    return {
+        "id": defect.id,
+        "inspection_id": defect.inspection_id,
+        "status": defect.status,
+        "is_confirmed": defect.is_confirmed,
+        "confirmed_by": defect.confirmed_by,
+        "comment": defect.comment,
+        "message": "Дефект подтверждён",
+    }
 
 
 @router.post("/{defect_id}/reject")
 def reject_defect(
     defect_id: int,
-    comment: str | None = None,
+    comment: str = Query(default="Ложное срабатывание"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -147,22 +291,17 @@ def reject_defect(
     defect.status = "rejected"
     defect.is_confirmed = False
     defect.confirmed_by = current_user.id
-    defect.confirmed_at = datetime.utcnow()
-
-    if comment:
-        defect.engineer_comment = comment
+    defect.comment = comment
 
     db.commit()
     db.refresh(defect)
 
-    defect = (
-        db.query(Defect)
-        .options(
-            joinedload(Defect.inspection),
-            joinedload(Defect.images),
-        )
-        .filter(Defect.id == defect_id)
-        .first()
-    )
-
-    return defect_to_dict(defect)
+    return {
+        "id": defect.id,
+        "inspection_id": defect.inspection_id,
+        "status": defect.status,
+        "is_confirmed": defect.is_confirmed,
+        "confirmed_by": defect.confirmed_by,
+        "comment": defect.comment,
+        "message": "Срабатывание отклонено",
+    }
