@@ -1,11 +1,13 @@
 from typing import Optional
 
+from fastapi import Query
+
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from app.services.shift_runtime_service import shift_runtime_service
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.ai_service import ai_service, MODE_PRESETS
-
+from app.core.security import  require_permission
 from app.services.shift_service import process_stream_folder, DEFAULT_STREAM_DIR
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -51,21 +53,7 @@ async def predict_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-# @router.post("/process-stream")
-# def process_stream(
-#     mode: str = "balanced",
-#     threshold: Optional[float] = None,
-#     current_user: User = Depends(get_current_user),
-# ):
-#     try:
-#         return process_stream_folder(
-#             stream_dir=DEFAULT_STREAM_DIR,
-#             mode=mode,
-#             threshold=threshold,
-#             save_best_frames=True,
-#         )
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/process-stream")
 def process_stream(
@@ -103,26 +91,19 @@ def process_stream(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 @router.post("/shift/start")
 def start_shift(
-    mode: str = "balanced",
-    threshold: Optional[float] = None,
-    delay_sec: float = 0.7,
-    current_user: User = Depends(get_current_user),
+    mode: Optional[str] = Query(default=None),
+    threshold: Optional[float] = Query(default=None),
+    delay_sec: float = Query(default=0.7),
+    current_user: User = Depends(require_permission("shift.control")),
 ):
-    try:
-        return shift_runtime_service.start_shift(
-            user_id=current_user.id,
-            mode=mode,
-            threshold=threshold,
-            delay_sec=delay_sec,
-        )
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    return shift_runtime_service.start_shift(
+        user_id=current_user.id,
+        mode=mode,
+        threshold=threshold,
+        delay_sec=delay_sec,
+    )
 
 @router.get("/shift/status")
 def get_shift_status(
@@ -133,14 +114,14 @@ def get_shift_status(
 
 @router.post("/shift/stop")
 def stop_shift(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("shift.control")),
 ):
     return shift_runtime_service.stop_shift()
 
 @router.post("/camera/start")
 def start_camera(
     delay_sec: float = 0.25,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("camera.control")),
 ):
     try:
         return camera_runtime_service.start_camera(delay_sec=delay_sec)
@@ -157,6 +138,6 @@ def get_camera_status(
 
 @router.post("/camera/stop")
 def stop_camera(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("camera.control")),
 ):
     return camera_runtime_service.stop_camera()

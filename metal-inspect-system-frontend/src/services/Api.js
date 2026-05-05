@@ -134,20 +134,23 @@ export const api = {
     }),
 
     // --- AI SHIFT ---
-  startShift: ({ mode = "balanced", threshold = null, delaySec = 0.7 } = {}) => {
-    const params = new URLSearchParams();
+  startShift: ({ mode = null, threshold = null, delaySec = 0.7 } = {}) => {
+  const params = new URLSearchParams();
 
-    params.set("mode", mode);
-    params.set("delay_sec", String(delaySec));
+  params.set("delay_sec", String(delaySec));
 
-    if (threshold !== null && threshold !== undefined && threshold !== "") {
-      params.set("threshold", String(threshold));
-    }
+  if (mode !== null && mode !== undefined && mode !== "") {
+    params.set("mode", String(mode));
+  }
 
-    return request(`/ai/shift/start?${params.toString()}`, {
-      method: "POST",
-    });
-  },
+  if (threshold !== null && threshold !== undefined && threshold !== "") {
+    params.set("threshold", String(threshold));
+  }
+
+  return request(`/ai/shift/start?${params.toString()}`, {
+    method: "POST",
+  });
+},
 
   getShiftStatus: () =>
     request("/ai/shift/status", {
@@ -206,6 +209,60 @@ export const api = {
     request(`/journal${buildQuery(params)}`, {
       method: "GET",
     }),
+
+    // --- AI MODELS ---
+  getAiModels: () =>
+    request("/ai/models", {
+      method: "GET",
+    }),
+
+  getActiveAiModel: () =>
+    request("/ai/models/active", {
+      method: "GET",
+    }),
+
+  activateAiModel: (modelId) =>
+    request(`/ai/models/${modelId}/activate`, {
+      method: "POST",
+    }),
+
+  updateAiModelSettings: (modelId, payload) =>
+    request(`/ai/models/${modelId}/settings`, {
+      method: "PUT",
+      body: payload,
+    }),
+
+  getActiveAiModelRuntime: () =>
+  request("/ai/models/active/runtime", {
+    method: "GET",
+  }),
+  getMyActivity: () =>
+    request("/users/me/activity", {
+      method: "GET",
+    }),
+
+  getRolePermissions: () =>
+  request("/permissions/roles", {
+    method: "GET",
+  }),
+
+  updateRolePermissions: (roleId, permissionCodes) =>
+    request(`/permissions/roles/${roleId}`, {
+      method: "PUT",
+      body: {
+        permission_codes: permissionCodes,
+      },
+    }),
+
+  getMyPermissions: () =>
+    request("/permissions/me", {
+      method: "GET",
+    }),
+  sendDefectToMes: (defectId) =>
+    request(`/journal/${defectId}/send-to-mes`, {
+      method: "POST",
+    }),
 };
+
 
 export { API_BASE_URL };

@@ -73,6 +73,11 @@ const Journal = () => {
                 bestFrameUrl: item.best_frame_url
                     ? `${API_BASE_URL}${item.best_frame_url}`
                     : null,
+                aiModelId: item.ai_model_id,
+                aiModelKey: item.ai_model_key,
+                aiModelName: item.ai_model_name,
+                aiModelType: item.ai_model_type,
+                aiModelArchitecture: item.ai_model_architecture,
             }));
     
             const mappedDefects = (defects.items || []).map((item) => ({
@@ -101,6 +106,11 @@ const Journal = () => {
                 bestFrameUrl: item.best_frame_url
                     ? `${API_BASE_URL}${item.best_frame_url}`
                     : null,
+                aiModelId: item.ai_model_id,
+                aiModelKey: item.ai_model_key,
+                aiModelName: item.ai_model_name,
+                aiModelType: item.ai_model_type,
+                aiModelArchitecture: item.ai_model_architecture,
             }));
     
             setInspectionData(mappedInspections);
@@ -208,10 +218,8 @@ const Journal = () => {
 
     const viewEventDetails = (event) => {
         const defectTypeText = {
-            'crack': 'Трещина',
-            'porosity': 'Пористость',
-            'inclusion': 'Включения',
-            'scratch': 'Царапина'
+            'crack': 'Трещина'
+           
         }[event.defectType] || event.defectType;
     
         const statusText = {
@@ -233,7 +241,9 @@ const Journal = () => {
             `threshold: ${Number(event.threshold || 0).toFixed(3)}\n` +
             `Режим: ${event.mode}\n` +
             `Кадров в слитке: ${event.framesCount}\n` +
-            `Вердикт: ${event.verdict}`
+            `Вердикт: ${event.verdict}`+
+            `Модель: ${event.aiModelName || event.aiModelKey || "—"}\n` +
+            `Архитектура: ${event.aiModelArchitecture || "—"}\n` 
         );
     };
 

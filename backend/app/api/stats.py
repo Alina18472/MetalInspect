@@ -12,7 +12,7 @@ from app.models.shift import Shift
 from app.models.inspection import Inspection
 from app.models.defect import Defect
 from app.services.shift_runtime_service import shift_runtime_service
-
+from app.core.security import get_current_user, require_permission
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -122,7 +122,7 @@ def shift_to_dict(
 @router.get("/current-shift")
 def get_current_shift_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("stats.view")),
 ):
     runtime_status = shift_runtime_service.get_status()
     shift_id = runtime_status.get("shift_id")
@@ -157,7 +157,7 @@ def get_stats_summary(
     shift_id: Optional[int] = Query(default=None),
     defect_status: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("stats.view")),
 ):
     shifts = get_filtered_shifts(
         db=db,
@@ -249,7 +249,7 @@ def get_shifts_stats(
     shift_id: Optional[int] = Query(default=None),
     defect_status: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("stats.view")),
 ):
     shifts = get_filtered_shifts(
         db=db,
@@ -270,7 +270,7 @@ def get_shifts_stats(
 def get_shift_details(
     shift_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("stats.view")),
 ):
     shift = db.query(Shift).filter(Shift.id == shift_id).first()
 

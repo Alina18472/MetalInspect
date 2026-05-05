@@ -4,3 +4,4 @@ from .shift import Shift
 from .inspection import Inspection
 from .defect import Defect
 from .image import Image
+from .ai_model import AiModel

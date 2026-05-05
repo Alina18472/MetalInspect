@@ -80,6 +80,11 @@ class ShiftRuntimeService:
             "error": None,
             "message": "Смена не запущена",
             "shift_id": None,
+            "active_model_id": None,
+            "active_model_key": None,
+            "active_model_name": None,
+            "active_model_type": None,
+            "active_model_architecture": None,
         }
 
     def get_status(self):
@@ -100,15 +105,29 @@ class ShiftRuntimeService:
     def start_shift(
         self,
         user_id: int,
-        mode: str = "balanced",
+        mode: Optional[str] = None,
         threshold: Optional[float] = None,
         delay_sec: float = 0.7,
     ):
-        if mode not in MODE_PRESETS:
-            raise ValueError(f"Unknown mode: {mode}")
+        # if mode not in MODE_PRESETS:
+        #     raise ValueError(f"Unknown mode: {mode}")
+
+        # if threshold is None:
+        #     threshold = MODE_PRESETS[mode]["threshold"]
+        ai_service.ensure_model_loaded()
+        active_model = ai_service.get_active_model_runtime_info()
+
+        active_modes = active_model.get("modes") or {}
+        default_mode = active_model.get("default_mode") or "balanced"
+
+        if mode is None:
+            mode = default_mode
+
+        if active_modes and mode not in active_modes:
+            raise ValueError(f"Unknown mode for active model: {mode}")
 
         if threshold is None:
-            threshold = MODE_PRESETS[mode]["threshold"]
+            threshold = ai_service.get_threshold_for_mode(mode=mode)
 
         if not 0 <= float(threshold) <= 1:
             raise ValueError("threshold должен быть в диапазоне 0..1")
@@ -134,6 +153,11 @@ class ShiftRuntimeService:
                 "threshold": float(threshold),
                 "message": "Смена запущена",
                 "shift_id": shift_id,
+                "active_model_id": active_model.get("id"),
+                "active_model_key": active_model.get("model_key"),
+                "active_model_name": active_model.get("name"),
+                "active_model_type": active_model.get("model_type"),
+                "active_model_architecture": active_model.get("architecture"),
             })
 
         self._thread = threading.Thread(
@@ -459,7 +483,7 @@ def process_one_ingot(
     best_frame_src = None
 
     total_frames = len(ingot_files)
-
+    last_pred = None
     for frame_index, img_path in enumerate(ingot_files, start=1):
         pil_img = PILImage.open(img_path).convert("RGB")
 
@@ -468,6 +492,7 @@ def process_one_ingot(
             threshold=threshold,
             mode=mode,
         )
+        last_pred = pred
 
         p_crack = float(pred["p_crack"])
         frame_verdict = "CRACK" if p_crack >= float(threshold) else "OK"
@@ -511,6 +536,11 @@ def process_one_ingot(
         "verdict": verdict,
         "best_frame_src": best_frame_src,
         "best_frame_saved": best_frame_saved,
+        "model_id": pred.get("model_id"),
+        "model_key": pred.get("model_key"),
+        "model_name": pred.get("model_name"),
+        "model_type": pred.get("model_type"),
+        "architecture": pred.get("architecture"),
     }
 
 
@@ -522,7 +552,7 @@ def save_one_ingot_result_to_db(
 ):
     verdict = result["verdict"]
     has_defect = verdict == "CRACK"
-
+    active_model_info = ai_service.get_active_model_runtime_info()
     inspection = Inspection(
         ingot_id=result["ingot_id"],
         source_ingot_id=result.get("source_ingot_id"),
@@ -538,6 +568,11 @@ def save_one_ingot_result_to_db(
         started_at=datetime.utcnow(),
         finished_at=datetime.utcnow(),
         shift_id=shift_id,
+        ai_model_id=result.get("model_id") or active_model_info.get("id"),
+        ai_model_key=result.get("model_key") or active_model_info.get("model_key"),
+        ai_model_name=result.get("model_name") or active_model_info.get("name"),
+        ai_model_type=result.get("model_type") or active_model_info.get("model_type"),
+        ai_model_architecture=result.get("architecture") or active_model_info.get("architecture"),
         created_by=user_id,
         
     )

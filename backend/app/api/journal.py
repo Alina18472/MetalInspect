@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+
 from app.models.user import User
 from app.models.inspection import Inspection
 from app.models.defect import Defect
 from app.models.image import Image as InspectionImage
 
-
+from app.core.security import get_current_user, require_permission
 router = APIRouter(prefix="/journal", tags=["journal"])
 
 
@@ -99,6 +99,11 @@ def inspection_to_dict(inspection: Inspection, db: Session) -> dict:
         "defect_type": defect.defect_type if defect else None,
         "defect_status": status,
         "comment": comment,
+        "ai_model_id": inspection.ai_model_id,
+        "ai_model_key": inspection.ai_model_key,
+        "ai_model_name": inspection.ai_model_name,
+        "ai_model_type": inspection.ai_model_type,
+        "ai_model_architecture": inspection.ai_model_architecture,
 
         "best_frame_url": media_path_to_url(image.file_path) if image else None,
     }
@@ -112,7 +117,7 @@ def get_inspections_journal(
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("journal.view")),
 ):
     query = db.query(Inspection)
 
@@ -200,6 +205,17 @@ def defect_to_dict(defect: Defect, db: Session) -> dict:
 
         "best_frame_path": image.file_path if image else None,
         "best_frame_url": media_path_to_url(image.file_path) if image else None,
+        "ai_model_id": inspection.ai_model_id,
+        "ai_model_key": inspection.ai_model_key,
+        "ai_model_name": inspection.ai_model_name,
+        "ai_model_type": inspection.ai_model_type,
+        "ai_model_architecture": inspection.ai_model_architecture,
+        "sent_to_mes_at": defect.sent_to_mes_at.isoformat(timespec="seconds")
+        if defect.sent_to_mes_at
+        else None,
+
+        "mes_status": defect.mes_status,
+        "mes_message": defect.mes_message,
     }
 
 
@@ -250,7 +266,7 @@ def confirm_defect(
     defect_id: int,
     comment: str = Query(default="Трещина подтверждена"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("defects.review")),
 ):
     defect = db.query(Defect).filter(Defect.id == defect_id).first()
 
@@ -260,6 +276,7 @@ def confirm_defect(
     defect.status = "confirmed"
     defect.is_confirmed = True
     defect.confirmed_by = current_user.id
+    defect.confirmed_at = datetime.utcnow()
     defect.comment = comment
 
     db.commit()
@@ -281,7 +298,7 @@ def reject_defect(
     defect_id: int,
     comment: str = Query(default="Ложное срабатывание"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("defects.review")),
 ):
     defect = db.query(Defect).filter(Defect.id == defect_id).first()
 
@@ -291,6 +308,7 @@ def reject_defect(
     defect.status = "rejected"
     defect.is_confirmed = False
     defect.confirmed_by = current_user.id
+    defect.confirmed_at = datetime.utcnow()
     defect.comment = comment
 
     db.commit()
@@ -304,4 +322,98 @@ def reject_defect(
         "confirmed_by": defect.confirmed_by,
         "comment": defect.comment,
         "message": "Срабатывание отклонено",
+    }
+
+@router.post("/{defect_id}/send-to-mes")
+def send_defect_to_mes(
+    defect_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("defects.review")),
+):
+    defect = db.query(Defect).filter(Defect.id == defect_id).first()
+
+    if not defect:
+        raise HTTPException(status_code=404, detail="Defect not found")
+
+    inspection = (
+        db.query(Inspection)
+        .filter(Inspection.id == defect.inspection_id)
+        .first()
+    )
+
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    if defect.status == "rejected":
+        raise HTTPException(
+            status_code=400,
+            detail="Отклонённое срабатывание нельзя передать в MES",
+        )
+
+    if defect.status == "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Передать в MES можно только подтверждённый дефект",
+        )
+
+    if defect.status == "sent_to_mes":
+        return {
+            "id": defect.id,
+            "inspection_id": defect.inspection_id,
+            "status": defect.status,
+            "mes_status": defect.mes_status or "sent",
+            "sent_to_mes_at": defect.sent_to_mes_at.isoformat(timespec="seconds")
+            if defect.sent_to_mes_at
+            else None,
+            "mes_message": defect.mes_message or "Дефект уже был передан в MES",
+            "message": "Дефект уже был передан в MES",
+        }
+
+    # Имитация payload для MES.
+    # В реальной системе здесь был бы HTTP-запрос / Kafka-сообщение / интеграция с MES.
+    mes_payload = {
+        "defect_id": defect.id,
+        "inspection_id": inspection.id,
+        "shift_id": inspection.shift_id,
+        "ingot_id": inspection.ingot_id,
+        "source_ingot_id": inspection.source_ingot_id,
+        "defect_type": defect.defect_type or "crack",
+        "max_p_crack": float(inspection.max_p_crack or 0),
+        "threshold": float(inspection.threshold or 0),
+        "verdict": inspection.verdict,
+        "ai_model_key": inspection.ai_model_key,
+        "ai_model_name": inspection.ai_model_name,
+        "sent_by": current_user.id,
+    }
+
+    defect.status = "sent_to_mes"
+    defect.is_confirmed = True
+
+    if not defect.confirmed_by:
+        defect.confirmed_by = current_user.id
+
+    if not defect.confirmed_at:
+        defect.confirmed_at = datetime.utcnow()
+
+    defect.sent_to_mes_at = datetime.utcnow()
+    defect.mes_status = "sent"
+    defect.mes_message = (
+        f"Имитация передачи в MES выполнена. "
+        f"Слиток {inspection.ingot_id}, дефект #{defect.id}."
+    )
+
+    db.commit()
+    db.refresh(defect)
+
+    return {
+        "id": defect.id,
+        "inspection_id": defect.inspection_id,
+        "status": defect.status,
+        "mes_status": defect.mes_status,
+        "sent_to_mes_at": defect.sent_to_mes_at.isoformat(timespec="seconds")
+        if defect.sent_to_mes_at
+        else None,
+        "mes_message": defect.mes_message,
+        "payload": mes_payload,
+        "message": "Дефект передан в MES",
     }

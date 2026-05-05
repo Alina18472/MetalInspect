@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.database import get_db
+from fastapi import Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
+
+
+from app.models.permission import Permission
+from app.models.role_permission import RolePermission
 SECRET_KEY = "CHANGE_ME_SUPER_SECRET"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
@@ -78,3 +84,39 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if int(current_user.role_id) != 1:
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
+
+def user_has_permission(
+    db: Session,
+    user: User,
+    permission_code: str,
+) -> bool:
+    if not user or not user.role_id:
+        return False
+
+    permission_exists = (
+        db.query(Permission.id)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .filter(
+            RolePermission.role_id == user.role_id,
+            Permission.code == permission_code,
+        )
+        .first()
+    )
+
+    return permission_exists is not None
+
+
+def require_permission(permission_code: str):
+    def dependency(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ):
+        if not user_has_permission(db, current_user, permission_code):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Недостаточно прав: {permission_code}",
+            )
+
+        return current_user
+
+    return dependency

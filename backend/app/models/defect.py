@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
-
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Defect(Base):
     __tablename__ = "defects"
@@ -27,6 +27,9 @@ class Defect(Base):
     defect_type = Column(String(100), default="crack")
     length_mm = Column(Float)
     confidence = Column(Float)
+    bbox = Column(JSONB, nullable=True)
+    detections = Column(JSONB, nullable=True)
+    bbox_count = Column(Integer, default=0)
 
     # Старое поле можно оставить
     is_confirmed = Column(Boolean, default=False)
@@ -37,7 +40,10 @@ class Defect(Base):
     confirmed_by = Column(Integer, ForeignKey("users.id"))
     confirmed_at = Column(DateTime)
 
-    engineer_comment = Column(Text)
+    comment = Column(Text)
+    sent_to_mes_at = Column(DateTime, nullable=True)
+    mes_status = Column(String(50), nullable=True)  # not_sent / sent / error
+    mes_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
 

@@ -13,8 +13,7 @@ const Dashboard = () => {
   const analysisActiveRef = useRef(false);
   const [eventsData, setEventsData] = useState([]);
   const [shiftStats, setShiftStats] = useState(null);
-  const [mode, setMode] = useState("balanced");
-  const [threshold, setThreshold] = useState("");
+  const [activeModel, setActiveModel] = useState(null);
   const [delaySec, setDelaySec] = useState("0.7");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -23,50 +22,7 @@ const Dashboard = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // const loadDashboardData = async () => {
-  //   try {
-  //     const [status, camera, journal, currentShiftStats] = await Promise.all([
-  //       api.getShiftStatus(),
-  //       api.getCameraStatus(),
-  //       api.getJournal(),
-  //       api.getCurrentShiftStats(),
-  //     ]);
-      
-  //     setCameraStatus(camera);
-  //     setShiftStatus(status);
-  //     setShiftStats(currentShiftStats?.shift || null);
-  //     analysisActiveRef.current = !!status?.running;
-
-  //     const mappedEvents = (journal.items || []).map((item) => ({
-  //       defectDbId: item.id,
-  //       inspectionId: item.inspection_id,
-
-  //       time: item.time ? item.time.replace("T", " ") : "",
-  //       id: item.ingot_id,
-  //       confidence: item.confidence || item.max_p_crack || 0,
-
-  //       status: item.status || "pending",
-  //       operator: item.operator || "Автоматически",
-  //       comment: item.comment || "Требуется проверка оператором",
-
-  //       defectType: item.defect_type || "crack",
-  //       maxPCrack: item.max_p_crack,
-  //       threshold: item.threshold,
-  //       mode: item.mode,
-  //       framesCount: item.frames_count,
-  //       verdict: item.verdict,
-
-  //       bestFrameUrl: item.best_frame_url
-  //         ? `${API_BASE_URL}${item.best_frame_url}`
-  //         : null,
-  //     }));
-
-  //     setEventsData(mappedEvents.slice(0, 10));
-  //     setError("");
-  //   } catch (e) {
-  //     setError(e?.message || "Не удалось загрузить данные панели");
-  //   }
-  // };
+  
   const loadDashboardData = async () => {
     if (loadingDashboardRef.current) return;
   
@@ -102,6 +58,14 @@ const Dashboard = () => {
         bestFrameUrl: item.best_frame_url
           ? `${API_BASE_URL}${item.best_frame_url}`
           : null,
+        aiModelId: item.ai_model_id,
+        aiModelKey: item.ai_model_key,
+        aiModelName: item.ai_model_name,
+        aiModelType: item.ai_model_type,
+        aiModelArchitecture: item.ai_model_architecture,
+        sentToMesAt: item.sent_to_mes_at,
+        mesStatus: item.mes_status,
+        mesMessage: item.mes_message,
       }));
   
       setEventsData(mappedEvents.slice(0, 10));
@@ -110,6 +74,14 @@ const Dashboard = () => {
       setError(e?.message || "Не удалось загрузить данные панели");
     } finally {
       loadingDashboardRef.current = false;
+    }
+  };
+  const loadActiveModel = async () => {
+    try {
+      const data = await api.getActiveAiModelRuntime();
+      setActiveModel(data);
+    } catch (e) {
+      console.warn("Не удалось загрузить активную модель:", e);
     }
   };
 
@@ -122,8 +94,17 @@ const Dashboard = () => {
 
   //   return () => clearInterval(interval);
   // }, []);
+ 
+
   useEffect(() => {
+    loadActiveModel();
     loadDashboardData();
+  
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 1500);
+  
+    return () => clearInterval(interval);
   }, []);
   
   useEffect(() => {
@@ -195,8 +176,6 @@ const Dashboard = () => {
 
     try {
       await api.startShift({
-        mode,
-        threshold: threshold === "" ? null : Number(threshold),
         delaySec: Number(delaySec || 0.7),
       });
 
@@ -283,6 +262,23 @@ const Dashboard = () => {
       setIsModalOpen(false);
     } catch (e) {
       alert(e?.message || "Не удалось отклонить дефект");
+    }
+  };
+  const sendToMes = async (event) => {
+    if (!event?.defectDbId) return;
+  
+    const ok = window.confirm(
+      `Передать дефект по слитку ${event.id} в MES?`
+    );
+  
+    if (!ok) return;
+  
+    try {
+      await api.sendDefectToMes(event.defectDbId);
+      await loadDashboardData();
+      setIsModalOpen(false);
+    } catch (e) {
+      alert(e?.message || "Не удалось передать дефект в MES");
     }
   };
 
@@ -384,8 +380,9 @@ const Dashboard = () => {
               <div className="camera-info">
                 <i className="fas fa-camera"></i>
                 <span>
-                  Источник: папка stream_images • Модель: ResNet18 crack / ok
-                </span>
+                Источник: папка stream_images; Активная модель:{" "}
+                {shiftStatus?.active_model_name || activeModel?.name || "—"}
+              </span>
               </div>
             </div>
 
@@ -458,6 +455,29 @@ const Dashboard = () => {
 
                   <div>
                     <strong>Статус смены:</strong>{" "}
+                    <div>
+                      <strong>Активная модель:</strong>{" "}
+                      {shiftStatus?.active_model_name || activeModel?.name || "—"}
+                    </div>
+
+                    <div>
+                      <strong>Архитектура:</strong>{" "}
+                      {shiftStatus?.active_model_architecture || activeModel?.architecture || "—"}
+                    </div>
+
+                    <div>
+                      <strong>Режим модели:</strong>{" "}
+                      {shiftStatus?.mode || activeModel?.default_mode || "—"}
+                    </div>
+
+                    <div>
+                      <strong>Threshold:</strong>{" "}
+                      {shiftStatus?.threshold !== null && shiftStatus?.threshold !== undefined
+                        ? Number(shiftStatus.threshold).toFixed(3)
+                        : activeModel?.threshold !== null && activeModel?.threshold !== undefined
+                        ? Number(activeModel.threshold).toFixed(3)
+                        : "—"}
+                    </div>
                     {shiftStatus?.running ? "идёт обработка" : "не запущена / завершена"}
                   </div>
 
@@ -527,35 +547,9 @@ const Dashboard = () => {
                   alignItems: "center",
                 }}
               >
-                <select
-                  className="control-btn secondary"
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value)}
-                  disabled={shiftStatus?.running}
-                >
-                  <option value="strict">Меньше ложных срабатываний</option>
-                  <option value="balanced">Сбалансированный</option>
-                  <option value="sensitive">Меньше пропусков дефектов</option>
-                </select>
-
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  max="1"
-                  placeholder="threshold"
-                  value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
-                  disabled={shiftStatus?.running}
-                  style={{
-                    width: "120px",
-                    padding: "10px",
-                    borderRadius: "6px",
-                    border: "1px solid rgba(60,120,180,0.4)",
-                    background: "rgba(20,30,45,0.9)",
-                    color: "#e0e0e0",
-                  }}
-                />
+              <span style={{ color: "#8fb4d9", fontSize: "0.85rem" }}>
+              задержка анализа, сек
+            </span>
 
                 <input
                   type="number"
@@ -640,8 +634,13 @@ const Dashboard = () => {
 
               <div className="fps-indicator">
                 <i className="fas fa-tachometer-alt"></i>
-                Режим: {shiftStatus?.mode || mode} • threshold:{" "}
-                {Number(shiftStatus?.threshold ?? threshold ?? 0.465).toFixed(3)}
+                Модель: {shiftStatus?.active_model_name || activeModel?.name || "—"} • Режим:{" "}
+                {shiftStatus?.mode || activeModel?.default_mode || "—"} • threshold:{" "}
+                {shiftStatus?.threshold !== null && shiftStatus?.threshold !== undefined
+                  ? Number(shiftStatus.threshold).toFixed(3)
+                  : activeModel?.threshold !== null && activeModel?.threshold !== undefined
+                  ? Number(activeModel.threshold).toFixed(3)
+                  : "—"}
                 </div>
             </div>
 
@@ -886,6 +885,43 @@ const Dashboard = () => {
                       {getStatusText(selectedEvent.status)}
                     </span>
                   </div>
+                  <div className="detail-row">
+                    <span className="detail-label">MES-статус:</span>
+                    <span className="detail-value">
+                      {selectedEvent.status === "sent_to_mes"
+                        ? "Передано в MES"
+                        : selectedEvent.mesStatus || "Не передано"}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Время передачи в MES:</span>
+                    <span className="detail-value">
+                      {selectedEvent.sentToMesAt
+                        ? selectedEvent.sentToMesAt.replace("T", " ")
+                        : "—"}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Сообщение MES:</span>
+                    <span className="detail-value">
+                      {selectedEvent.mesMessage || "—"}
+                    </span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Модель:</span>
+                    <span className="detail-value">
+                      {selectedEvent.aiModelName || selectedEvent.aiModelKey || "—"}
+                    </span>
+                  </div>
+
+                  <div className="detail-row">
+                    <span className="detail-label">Архитектура:</span>
+                    <span className="detail-value">
+                      {selectedEvent.aiModelArchitecture || "—"}
+                    </span>
+                  </div>
 
                   <div className="detail-row">
                     <span className="detail-label">Комментарий:</span>
@@ -899,22 +935,65 @@ const Dashboard = () => {
                       borderTop: "1px solid rgba(60, 120, 180, 0.3)",
                     }}
                   >
-                    <button
-                      className="control-btn"
-                      style={{ width: "100%", marginBottom: "10px" }}
-                      onClick={() => confirmEvent(selectedEvent)}
-                    >
-                      <i className="fas fa-check-circle"></i> Подтвердить дефект
-                    </button>
+                    {selectedEvent.status === "pending" && (
+                      <>
+                        <button
+                          className="control-btn"
+                          style={{ width: "100%", marginBottom: "10px" }}
+                          onClick={() => confirmEvent(selectedEvent)}
+                        >
+                          <i className="fas fa-check-circle"></i> Подтвердить дефект
+                        </button>
 
-                    <button
-                      className="control-btn secondary"
-                      style={{ width: "100%" }}
-                      onClick={() => rejectEvent(selectedEvent)}
-                    >
-                      <i className="fas fa-times-circle"></i> Отметить как
-                      ложное срабатывание
-                    </button>
+                        <button
+                          className="control-btn secondary"
+                          style={{ width: "100%", marginBottom: "10px" }}
+                          onClick={() => rejectEvent(selectedEvent)}
+                        >
+                          <i className="fas fa-times-circle"></i> Отметить как ложное срабатывание
+                        </button>
+                      </>
+                    )}
+
+                    {selectedEvent.status === "confirmed" && (
+                      <button
+                        className="control-btn"
+                        style={{ width: "100%", marginBottom: "10px" }}
+                        onClick={() => sendToMes(selectedEvent)}
+                      >
+                        <i className="fas fa-paper-plane"></i> Передать в MES
+                      </button>
+                    )}
+
+                    {selectedEvent.status === "sent_to_mes" && (
+                      <div
+                        style={{
+                          padding: "12px",
+                          borderRadius: "8px",
+                          background: "rgba(76, 175, 80, 0.15)",
+                          color: "#a5d6a7",
+                          textAlign: "center",
+                          fontWeight: "600",
+                        }}
+                      >
+                        <i className="fas fa-check-circle"></i> Дефект передан в MES
+                      </div>
+                    )}
+
+                    {selectedEvent.status === "rejected" && (
+                      <div
+                        style={{
+                          padding: "12px",
+                          borderRadius: "8px",
+                          background: "rgba(255, 152, 0, 0.15)",
+                          color: "#ffcc80",
+                          textAlign: "center",
+                          fontWeight: "600",
+                        }}
+                      >
+                        <i className="fas fa-ban"></i> Срабатывание отклонено
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

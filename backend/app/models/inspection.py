@@ -43,6 +43,12 @@ class Inspection(Base):
     frames_count = Column(Integer)
     shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=True, index=True)
     shift = relationship("Shift", back_populates="inspections")
+    
+    ai_model_id = Column(Integer, ForeignKey("ai_models.id", ondelete="SET NULL"), nullable=True)
+    ai_model_key = Column(String(100), nullable=True)
+    ai_model_name = Column(String(255), nullable=True)
+    ai_model_type = Column(String(50), nullable=True)
+    ai_model_architecture = Column(String(100), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"))
 
     defects = relationship(

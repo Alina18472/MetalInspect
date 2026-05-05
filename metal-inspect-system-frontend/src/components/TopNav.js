@@ -54,9 +54,9 @@ export default function TopNav({ subtitle, userName, userRole }) {
         <NavLink to="/stats" className={linkClass}>
           <i className="fas fa-chart-bar"></i> Статистика
         </NavLink>
-        <NavLink to="/settings" className={linkClass}>
+        {/* <NavLink to="/settings" className={linkClass}>
           <i className="fas fa-sliders-h"></i> Настройки
-        </NavLink>
+        </NavLink> */}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
