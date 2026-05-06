@@ -262,6 +262,11 @@ export const api = {
     request(`/journal/${defectId}/send-to-mes`, {
       method: "POST",
     }),
+  
+  
+
+  
+  
 };
 
 

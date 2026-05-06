@@ -73,6 +73,10 @@ class ShiftRuntimeService:
             "current_frame_total": None,
             "current_p_crack": None,
             "current_frame_verdict": None,
+            "current_model_type": None,
+            "current_detections": [],
+            "current_best_bbox": None,
+            "current_bbox_count": 0,
 
             "last_result": None,
             "last_saved": None,
@@ -85,6 +89,8 @@ class ShiftRuntimeService:
             "active_model_name": None,
             "active_model_type": None,
             "active_model_architecture": None,
+            "active_confidence_threshold": None,
+            "active_iou_threshold": None,
         }
 
     def get_status(self):
@@ -158,6 +164,8 @@ class ShiftRuntimeService:
                 "active_model_name": active_model.get("name"),
                 "active_model_type": active_model.get("model_type"),
                 "active_model_architecture": active_model.get("architecture"),
+                "active_confidence_threshold": active_model.get("confidence_threshold"),
+                "active_iou_threshold": active_model.get("iou_threshold"),
             })
 
         self._thread = threading.Thread(
@@ -177,6 +185,13 @@ class ShiftRuntimeService:
             "type": "shift_started",
             "mode": mode,
             "threshold": float(threshold),
+            "active_model_id": active_model.get("id"),
+            "active_model_key": active_model.get("model_key"),
+            "active_model_name": active_model.get("name"),
+            "active_model_type": active_model.get("model_type"),
+            "active_model_architecture": active_model.get("architecture"),
+            "confidence_threshold": active_model.get("confidence_threshold"),
+            "iou_threshold": active_model.get("iou_threshold"),
             "message": "AI-анализ смены запущен",
         })
 
@@ -312,6 +327,10 @@ class ShiftRuntimeService:
                                 f"p_crack={frame_info['p_crack']:.3f} | "
                                 f"{frame_info['frame_verdict']}"
                             ),
+                            current_model_type=frame_info.get("model_type"),
+                            current_detections=frame_info.get("detections", []),
+                            current_best_bbox=frame_info.get("best_bbox"),
+                            current_bbox_count=len(frame_info.get("detections", []) or []),
                         )
 
                         shift_ws_manager.broadcast_json({
@@ -329,6 +348,10 @@ class ShiftRuntimeService:
                             "frame_total": frame_info["frame_total"],
                             "p_crack": frame_info["p_crack"],
                             "frame_verdict": frame_info["frame_verdict"],
+                            "model_type": frame_info.get("model_type"),
+                            "detections": frame_info.get("detections", []),
+                            "best_bbox": frame_info.get("best_bbox"),
+                            "bbox_count": len(frame_info.get("detections", []) or []),
                         })
 
                     result = process_one_ingot(
@@ -390,6 +413,15 @@ class ShiftRuntimeService:
                         "frames_count": result["frames_count"],
                         "inspection_id": saved.get("inspection_id") if saved else None,
                         "defect_id": saved.get("defect_id") if saved else None,
+                        "model_id": result.get("model_id"),
+                        "model_key": result.get("model_key"),
+                        "model_name": result.get("model_name"),
+                        "model_type": result.get("model_type"),
+                        "architecture": result.get("architecture"),
+
+                        "best_bbox": result.get("best_bbox"),
+                        "detections": result.get("best_detections", []),
+                        "bbox_count": result.get("bbox_count", 0),
                     })
 
                     if result["verdict"] == "CRACK":
@@ -404,6 +436,15 @@ class ShiftRuntimeService:
                             "max_p_crack": result["max_p_crack"],
                             "defect_id": saved.get("defect_id") if saved else None,
                             "message": f"Обнаружен дефект: {result['ingot_id']}",
+                            "model_id": result.get("model_id"),
+                            "model_key": result.get("model_key"),
+                            "model_name": result.get("model_name"),
+                            "model_type": result.get("model_type"),
+                            "architecture": result.get("architecture"),
+
+                            "best_bbox": result.get("best_bbox"),
+                            "detections": result.get("best_detections", []),
+                            "bbox_count": result.get("bbox_count", 0),
                         })
 
                     if delay_sec > 0:
@@ -477,10 +518,18 @@ def process_one_ingot(
     mode: str,
     threshold: float,
     on_frame=None,
+    
 ):
     frames_count = 0
     max_p_crack = 0.0
     best_frame_src = None
+
+    # Для YOLO / detection-модели.
+    # Для ResNet эти значения останутся пустыми.
+    best_bbox = None
+    best_detections = []
+    best_model_type = None
+    effective_threshold = float(threshold or 0)
 
     total_frames = len(ingot_files)
     last_pred = None
@@ -494,14 +543,31 @@ def process_one_ingot(
         )
         last_pred = pred
 
-        p_crack = float(pred["p_crack"])
-        frame_verdict = "CRACK" if p_crack >= float(threshold) else "OK"
+        p_crack = float(pred.get("p_crack", 0))
+
+        # Для ResNet threshold приходит из аргумента.
+        # Для YOLO ai_service сможет вернуть свой threshold = confidence_threshold.
+        effective_threshold = float(pred.get("threshold", threshold or 0))
+
+        frame_verdict = pred.get("verdict") or (
+            "CRACK" if p_crack >= effective_threshold else "OK"
+        )
+
+        detections = pred.get("detections", []) or []
+        bbox = pred.get("best_bbox")
+        model_type = pred.get("model_type")
 
         frames_count += 1
 
         if p_crack > max_p_crack:
             max_p_crack = p_crack
             best_frame_src = img_path
+
+            # Для YOLO сохраняем bbox и список detections с лучшего кадра.
+            # Для ResNet здесь будут None и [].
+            best_bbox = bbox
+            best_detections = detections
+            best_model_type = model_type
 
         if on_frame:
             on_frame({
@@ -513,11 +579,14 @@ def process_one_ingot(
                 "p_crack": p_crack,
                 "frame_verdict": frame_verdict,
                 "frame_url": stream_image_path_to_url(img_path),
+                "model_type": model_type,
+                "detections": detections,
+                "best_bbox": bbox,
             })
 
      
 
-    verdict = "CRACK" if max_p_crack >= float(threshold) else "OK"
+    verdict = "CRACK" if max_p_crack >= float(effective_threshold) else "OK"
 
     best_frame_saved = None
     if verdict == "CRACK" and best_frame_src:
@@ -531,16 +600,21 @@ def process_one_ingot(
         "ingot_id": ingot_id,
         "frames_count": frames_count,
         "max_p_crack": max_p_crack,
-        "threshold": float(threshold),
+        "threshold": float(effective_threshold),
         "mode": mode,
         "verdict": verdict,
         "best_frame_src": best_frame_src,
         "best_frame_saved": best_frame_saved,
-        "model_id": pred.get("model_id"),
-        "model_key": pred.get("model_key"),
-        "model_name": pred.get("model_name"),
-        "model_type": pred.get("model_type"),
-        "architecture": pred.get("architecture"),
+        "model_id": last_pred.get("model_id") if last_pred else None,
+        "model_key": last_pred.get("model_key") if last_pred else None,
+        "model_name": last_pred.get("model_name") if last_pred else None,
+        "model_type": best_model_type or (last_pred.get("model_type") if last_pred else None),
+        "architecture": last_pred.get("architecture") if last_pred else None,
+
+        # Для YOLO / bbox
+        "best_bbox": best_bbox,
+        "best_detections": best_detections,
+        "bbox_count": len(best_detections),
     }
 
 
@@ -584,12 +658,17 @@ def save_one_ingot_result_to_db(
     image = None
 
     if has_defect:
+        detections = result.get("best_detections") or []
+        best_bbox = result.get("best_bbox")
         defect = Defect(
             inspection_id=inspection.id,
             defect_type="crack",
             confidence=float(result["max_p_crack"]),
             status="pending",
             is_confirmed=False,
+            bbox=best_bbox,
+            detections=detections,
+            bbox_count=len(detections),
         )
 
         db.add(defect)
@@ -611,6 +690,10 @@ def save_one_ingot_result_to_db(
         "defect_id": defect.id if defect else None,
         "image_id": image.id if image else None,
         "verdict": verdict,
+        # Для YOLO / bbox
+        "bbox": defect.bbox if defect else None,
+        "detections": defect.detections if defect else [],
+        "bbox_count": defect.bbox_count if defect else 0,
     }
 
 

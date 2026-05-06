@@ -8,9 +8,19 @@ from app.models.user import User
 from app.models.ai_model import AiModel
 from app.schemas.ai_model import AiModelPublic, AiModelSettingsUpdate
 from app.services.ai_service import ai_service
+from pathlib import Path
 
 router = APIRouter(prefix="/ai/models", tags=["ai-models"])
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
+
+def resolve_model_weights_path(weights_path: str) -> Path:
+    path = Path(weights_path)
+
+    if path.is_absolute():
+        return path
+
+    return BACKEND_DIR / path
 
 @router.get("", response_model=List[AiModelPublic])
 def list_ai_models(
@@ -63,16 +73,33 @@ def activate_ai_model(
     if not model:
         raise HTTPException(status_code=404, detail="AI model not found")
 
-    if model.status != "available":
+    if model.status not in {"available", "experimental"}:
         raise HTTPException(
             status_code=400,
-            detail=f"Model cannot be activated because status is '{model.status}'"
+            detail=(
+                f"Model cannot be activated because status is '{model.status}'. "
+                "Allowed statuses: available, experimental"
+            ),
+        )
+
+    if model.model_type not in {"classification", "detection"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Only classification and detection models can be activated",
         )
 
     if not model.weights_path:
         raise HTTPException(
             status_code=400,
-            detail="Model cannot be activated because weights_path is empty"
+            detail="Model cannot be activated because weights_path is empty",
+        )
+
+    weights_path = resolve_model_weights_path(model.weights_path)
+
+    if not weights_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model weights file not found: {weights_path}",
         )
 
     # Делаем все модели неактивными
@@ -109,7 +136,7 @@ def update_ai_model_settings(
     if not model:
         raise HTTPException(status_code=404, detail="AI model not found")
 
-    allowed_statuses = {"available", "planned", "disabled", "error"}
+    allowed_statuses = {"available", "experimental", "planned", "disabled", "error"}
 
     if data.status is not None:
         if data.status not in allowed_statuses:
@@ -136,11 +163,32 @@ def update_ai_model_settings(
         if model.modes and data.default_mode in model.modes:
             mode_value = model.modes[data.default_mode]
 
-            if model.model_type == "classification":
-                model.threshold = float(mode_value)
+            if isinstance(mode_value, dict):
+                if model.model_type == "classification":
+                    threshold_value = mode_value.get("threshold")
 
-            if model.model_type == "detection":
-                model.confidence_threshold = float(mode_value)
+                    if threshold_value is not None:
+                        model.threshold = float(threshold_value)
+
+                if model.model_type == "detection":
+                    confidence_value = (
+                        mode_value.get("confidence_threshold")
+                        or mode_value.get("threshold")
+                    )
+                    iou_value = mode_value.get("iou_threshold")
+
+                    if confidence_value is not None:
+                        model.confidence_threshold = float(confidence_value)
+
+                    if iou_value is not None:
+                        model.iou_threshold = float(iou_value)
+
+            else:
+                if model.model_type == "classification":
+                    model.threshold = float(mode_value)
+
+                if model.model_type == "detection":
+                    model.confidence_threshold = float(mode_value)
 
     if data.threshold is not None:
         if not 0 <= float(data.threshold) <= 1:

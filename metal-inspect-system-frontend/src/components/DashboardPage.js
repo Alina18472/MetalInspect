@@ -21,8 +21,10 @@ const Dashboard = () => {
   const loadingDashboardRef = useRef(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  
+  const frameImgRef = useRef(null);
+  const [imageBox, setImageBox] = useState(null);
+  const modalImgRef = useRef(null);
+  const [modalImageBox, setModalImageBox] = useState(null);
   const loadDashboardData = async () => {
     if (loadingDashboardRef.current) return;
   
@@ -66,6 +68,11 @@ const Dashboard = () => {
         sentToMesAt: item.sent_to_mes_at,
         mesStatus: item.mes_status,
         mesMessage: item.mes_message,
+        bbox: item.bbox || null,
+        detections: Array.isArray(item.detections) ? item.detections : [],
+        bboxCount:
+          item.bbox_count ??
+          (Array.isArray(item.detections) ? item.detections.length : 0),
       }));
   
       setEventsData(mappedEvents.slice(0, 10));
@@ -148,7 +155,7 @@ const Dashboard = () => {
           analysisActiveRef.current = false;
         }
   
-        if (data.type === "camera_frame") {
+        if (data.type === "camera_frame" || data.type === "analysis_frame") {
           setLiveFrame(data);
         }
         
@@ -361,6 +368,126 @@ const Dashboard = () => {
     shiftStatus?.current_frame_verdict ||
     null;
   
+  const updateImageBox = () => {
+  const img = frameImgRef.current;
+  if (!img) return;
+
+  const rect = img.getBoundingClientRect();
+
+  setImageBox({
+    width: rect.width,
+    height: rect.height,
+    naturalWidth: img.naturalWidth,
+    naturalHeight: img.naturalHeight,
+  });
+};
+const updateModalImageBox = () => {
+  const img = modalImgRef.current;
+  if (!img) return;
+
+  const rect = img.getBoundingClientRect();
+
+  setModalImageBox({
+    width: rect.width,
+    height: rect.height,
+    naturalWidth: img.naturalWidth,
+    naturalHeight: img.naturalHeight,
+  });
+};
+
+const getLiveDetections = () => {
+  if (Array.isArray(liveFrame?.detections)) return liveFrame.detections;
+  if (Array.isArray(shiftStatus?.current_detections)) return shiftStatus.current_detections;
+  return [];
+};
+const getSelectedEventDetections = () => {
+  if (!selectedEvent) return [];
+
+  if (Array.isArray(selectedEvent.detections) && selectedEvent.detections.length > 0) {
+    return selectedEvent.detections;
+  }
+
+  if (selectedEvent.bbox) {
+    return [{ bbox: selectedEvent.bbox, confidence: selectedEvent.confidence }];
+  }
+
+  return [];
+};
+
+const normalizeBbox = (det) => {
+  const raw = det?.bbox || det?.box || det?.xyxy || det;
+
+  if (!raw) return null;
+
+  let x1;
+  let y1;
+  let x2;
+  let y2;
+
+  if (Array.isArray(raw) && raw.length >= 4) {
+    [x1, y1, x2, y2] = raw;
+  } else if (typeof raw === "object") {
+    if (
+      raw.x1 !== undefined &&
+      raw.y1 !== undefined &&
+      raw.x2 !== undefined &&
+      raw.y2 !== undefined
+    ) {
+      x1 = raw.x1;
+      y1 = raw.y1;
+      x2 = raw.x2;
+      y2 = raw.y2;
+    } else if (
+      raw.x !== undefined &&
+      raw.y !== undefined &&
+      raw.width !== undefined &&
+      raw.height !== undefined
+    ) {
+      x1 = raw.x;
+      y1 = raw.y;
+      x2 = raw.x + raw.width;
+      y2 = raw.y + raw.height;
+    }
+  }
+
+  x1 = Number(x1);
+  y1 = Number(y1);
+  x2 = Number(x2);
+  y2 = Number(y2);
+
+  if ([x1, y1, x2, y2].some((v) => Number.isNaN(v))) return null;
+
+  return { x1, y1, x2, y2 };
+};
+const getBboxStyle = (det, targetImageBox = imageBox) => {
+  if (!targetImageBox) return null;
+
+  const box = normalizeBbox(det);
+  if (!box) return null;
+
+  let { x1, y1, x2, y2 } = box;
+
+  const maxCoord = Math.max(x1, y1, x2, y2);
+
+  // Если координаты нормализованные 0..1
+  if (maxCoord <= 1) {
+    x1 *= targetImageBox.naturalWidth;
+    x2 *= targetImageBox.naturalWidth;
+    y1 *= targetImageBox.naturalHeight;
+    y2 *= targetImageBox.naturalHeight;
+  }
+
+  const scaleX = targetImageBox.width / targetImageBox.naturalWidth;
+  const scaleY = targetImageBox.height / targetImageBox.naturalHeight;
+
+  return {
+    left: `${x1 * scaleX}px`,
+    top: `${y1 * scaleY}px`,
+    width: `${(x2 - x1) * scaleX}px`,
+    height: `${(y2 - y1) * scaleY}px`,
+  };
+};
+  
   return (
     <div className="dashboard-page">
       <div className="dashboard-container">
@@ -389,8 +516,10 @@ const Dashboard = () => {
             <div className="video-container">
             {liveFrame?.frame_url ? (
             <img
+              ref={frameImgRef}
               src={`${API_BASE_URL}${liveFrame.frame_url}`}
               alt={liveFrame.frame_name || "Кадр камеры"}
+              onLoad={updateImageBox}
               style={{
                 width: "100%",
                 height: "100%",
@@ -400,8 +529,10 @@ const Dashboard = () => {
             />
           ) : cameraStatus?.current_frame_url ? (
             <img
+              ref={frameImgRef}
               src={`${API_BASE_URL}${cameraStatus.current_frame_url}`}
               alt={cameraStatus.current_frame_name || "Кадр камеры"}
+              onLoad={updateImageBox}
               style={{
                 width: "100%",
                 height: "100%",
@@ -423,6 +554,53 @@ const Dashboard = () => {
           ) : (
             <div className="video-placeholder"></div>
           )}
+          {/* BBOX overlay для YOLO */}
+          {getLiveDetections().map((det, index) => {
+            const style = getBboxStyle(det);
+
+            if (!style) return null;
+
+            const conf =
+              det.confidence ??
+              det.conf ??
+              det.score ??
+              det.probability ??
+              null;
+
+            return (
+              <div
+                key={index}
+                style={{
+                  position: "absolute",
+                  ...style,
+                  border: "2px solid #ff4d4f",
+                  borderRadius: "4px",
+                  pointerEvents: "none",
+                  boxShadow: "0 0 10px rgba(255, 77, 79, 0.8)",
+                  zIndex: 5,
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: "-24px",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    background: "rgba(255, 77, 79, 0.9)",
+                    color: "#fff",
+                    fontSize: "12px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  crack
+                  {conf !== null && conf !== undefined
+                    ? ` ${(Number(conf) * 100).toFixed(1)}%`
+                    : ""}
+                </div>
+              </div>
+            );
+          })}
          
                
               <div className="video-overlay">
@@ -507,6 +685,17 @@ const Dashboard = () => {
                     <strong>Вердикт кадра:</strong>{" "}
                     {liveVerdict || "—"}
                   </div> */}
+                  <div>
+                    <strong>Тип модели:</strong>{" "}
+                    {liveFrame?.model_type || shiftStatus?.active_model_type || "—"}
+                  </div>
+
+                  <div>
+                    <strong>Найдено bbox:</strong>{" "}
+                    {liveFrame?.bbox_count ??
+                      shiftStatus?.current_bbox_count ??
+                      (Array.isArray(liveFrame?.detections) ? liveFrame.detections.length : 0)}
+                  </div>
 
                   {shiftStatus?.last_result && (
                     <div>
@@ -787,18 +976,75 @@ const Dashboard = () => {
               </div>
 
               <div className="modal-body">
-                <div className="detail-image">
+              <div
+                  className="detail-image"
+                  style={{
+                    position: "relative",
+                    overflow: "hidden",
+                  }}
+                >
                   {selectedEvent.bestFrameUrl ? (
-                    <img
-                      src={selectedEvent.bestFrameUrl}
-                      alt={`Лучший кадр ${selectedEvent.id}`}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "contain",
-                        display: "block",
-                      }}
-                    />
+                    <>
+                      <img
+                        ref={modalImgRef}
+                        src={selectedEvent.bestFrameUrl}
+                        alt={`Лучший кадр ${selectedEvent.id}`}
+                        onLoad={updateModalImageBox}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                          display: "block",
+                        }}
+                      />
+
+                      {getSelectedEventDetections().map((det, index) => {
+                        const style = getBboxStyle(det, modalImageBox);
+
+                        if (!style) return null;
+
+                        const conf =
+                          det.confidence ??
+                          det.conf ??
+                          det.score ??
+                          selectedEvent.confidence ??
+                          null;
+
+                        return (
+                          <div
+                            key={index}
+                            style={{
+                              position: "absolute",
+                              ...style,
+                              border: "2px solid #ff4d4f",
+                              borderRadius: "4px",
+                              pointerEvents: "none",
+                              boxShadow: "0 0 10px rgba(255, 77, 79, 0.8)",
+                              zIndex: 5,
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 0,
+                                top: "-24px",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                background: "rgba(255, 77, 79, 0.9)",
+                                color: "#fff",
+                                fontSize: "12px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              crack
+                              {conf !== null && conf !== undefined
+                                ? ` ${(Number(conf) * 100).toFixed(1)}%`
+                                : ""}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
                   ) : (
                     <div
                       style={{

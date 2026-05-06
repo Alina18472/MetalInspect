@@ -106,6 +106,9 @@ def inspection_to_dict(inspection: Inspection, db: Session) -> dict:
         "ai_model_architecture": inspection.ai_model_architecture,
 
         "best_frame_url": media_path_to_url(image.file_path) if image else None,
+        "bbox": defect.bbox if defect else None,
+        "detections": defect.detections if defect else [],
+        "bbox_count": defect.bbox_count if defect else 0,
     }
 
 
@@ -216,6 +219,9 @@ def defect_to_dict(defect: Defect, db: Session) -> dict:
 
         "mes_status": defect.mes_status,
         "mes_message": defect.mes_message,
+        "bbox": defect.bbox,
+        "detections": defect.detections or [],
+        "bbox_count": defect.bbox_count or 0,
     }
 
 

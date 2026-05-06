@@ -44,6 +44,10 @@ class Defect(Base):
     sent_to_mes_at = Column(DateTime, nullable=True)
     mes_status = Column(String(50), nullable=True)  # not_sent / sent / error
     mes_message = Column(Text, nullable=True)
+    
+    bbox = Column(JSONB, nullable=True)
+    detections = Column(JSONB, nullable=True)
+    bbox_count = Column(Integer, default=0)
 
     created_at = Column(DateTime, server_default=func.now())
 

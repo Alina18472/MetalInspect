@@ -1,141 +1,3 @@
-# import os
-# import io
-# from typing import Optional
-
-# import torch
-# import torch.nn as nn
-# from torchvision import models, transforms
-# from PIL import Image
-
-
-# DEFAULT_MODEL_PATH = os.path.abspath(
-#     os.path.join(os.path.dirname(__file__), "..", "..", "models_ml", "best_weighted.pt")
-# )
-
-# MODE_PRESETS = {
-#     "strict": {
-#         "title": "Меньше ложных срабатываний / больше пропусков",
-#         "threshold": 0.65,
-#     },
-#     "balanced": {
-#         "title": "Сбалансированный режим",
-#         "threshold": 0.465,
-#     },
-#     "sensitive": {
-#         "title": "Больше ложных срабатываний / меньше пропусков",
-#         "threshold": 0.35,
-#     },
-# }
-
-
-# class AIService:
-#     def __init__(self, model_path: str = DEFAULT_MODEL_PATH):
-#         self.model_path = model_path
-#         self.model = None
-#         self.tf = None
-#         self.classes = None
-#         self.device = None
-#         self.img_size = None
-
-#     def load_model(self):
-#         if not os.path.exists(self.model_path):
-#             raise FileNotFoundError(f"Файл модели не найден: {self.model_path}")
-
-#         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-#         ckpt = torch.load(self.model_path, map_location=self.device)
-
-#         self.classes = ckpt["classes"]
-#         self.img_size = ckpt["img_size"]
-
-#         model = models.resnet18(weights=None)
-#         model.fc = nn.Linear(model.fc.in_features, len(self.classes))
-#         model.load_state_dict(ckpt["model_state"])
-#         model.to(self.device)
-#         model.eval()
-
-#         self.model = model
-
-#         self.tf = transforms.Compose([
-#             transforms.Resize((self.img_size, self.img_size)),
-#             transforms.ToTensor(),
-#             transforms.Normalize(
-#                 mean=[0.485, 0.456, 0.406],
-#                 std=[0.229, 0.224, 0.225],
-#             ),
-#         ])
-
-#         if "crack" not in self.classes or "ok" not in self.classes:
-#             raise ValueError(f"Ожидались классы crack/ok, получено: {self.classes}")
-
-#         return self
-
-#     def ensure_loaded(self):
-#         if self.model is None:
-#             self.load_model()
-
-#     def get_model_info(self):
-#         self.ensure_loaded()
-
-#         return {
-#             "model_path": self.model_path,
-#             "classes": self.classes,
-#             "img_size": self.img_size,
-#             "device": self.device,
-#             "mode_presets": MODE_PRESETS,
-#         }
-
-#     @torch.no_grad()
-#     def predict_pil(
-#         self,
-#         pil_img: Image.Image,
-#         threshold: Optional[float] = None,
-#         mode: str = "balanced",
-#     ):
-#         self.ensure_loaded()
-
-#         if threshold is None:
-#             threshold = MODE_PRESETS.get(mode, MODE_PRESETS["balanced"])["threshold"]
-
-#         if not 0 <= float(threshold) <= 1:
-#             raise ValueError("threshold должен быть в диапазоне от 0 до 1")
-
-#         img = pil_img.convert("RGB")
-#         x = self.tf(img).unsqueeze(0).to(self.device)
-
-#         logits = self.model(x)
-#         probs = torch.softmax(logits, dim=1).squeeze(0).cpu().tolist()
-
-#         crack_idx = self.classes.index("crack")
-#         ok_idx = self.classes.index("ok")
-
-#         p_crack = float(probs[crack_idx])
-#         p_ok = float(probs[ok_idx])
-
-#         verdict = "CRACK" if p_crack >= float(threshold) else "OK"
-#         confidence = p_crack if verdict == "CRACK" else p_ok
-
-#         return {
-#             "verdict": verdict,
-#             "p_crack": p_crack,
-#             "p_ok": p_ok,
-#             "confidence": confidence,
-#             "threshold": float(threshold),
-#             "mode": mode,
-#             "classes": self.classes,
-#         }
-
-#     def predict_bytes(
-#         self,
-#         image_bytes: bytes,
-#         threshold: Optional[float] = None,
-#         mode: str = "balanced",
-#     ):
-#         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-#         return self.predict_pil(pil_img, threshold=threshold, mode=mode)
-
-
-# ai_service = AIService()
 from pathlib import Path
 from threading import Lock
 from typing import Optional
@@ -147,7 +9,7 @@ from torchvision import models, transforms
 
 from app.core.database import SessionLocal
 from app.models.ai_model import AiModel
-
+from ultralytics import YOLO
 
 # Fallback, чтобы старый код не сломался
 MODE_PRESETS = {
@@ -191,6 +53,7 @@ class AiService:
         self.active_modes = None
         self.active_metrics = None
         self.active_weights_path = None
+        self.yolo_device = None
 
     def _resolve_weights_path(self, weights_path: str) -> Path:
         path = Path(weights_path)
@@ -224,6 +87,20 @@ class AiService:
         ])
 
         return model, tf, classes, device
+    
+    def _load_yolo_checkpoint(self, weights_path: Path):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        yolo_device = 0 if torch.cuda.is_available() else "cpu"
+
+        model = YOLO(str(weights_path))
+
+        names = model.names or {}
+        if isinstance(names, dict):
+            classes = list(names.values())
+        else:
+            classes = list(names)
+
+        return model, None, classes, device, yolo_device
 
     def reload_active_model(self):
         """
@@ -246,21 +123,10 @@ class AiService:
             if not model_row:
                 raise RuntimeError("В таблице ai_models нет активной модели")
 
-            if model_row.status != "available":
+            if model_row.status not in ("available", "experimental"):
                 raise RuntimeError(
-                    f"Активная модель имеет статус '{model_row.status}', а нужен 'available'"
-                )
-
-            if model_row.model_type != "classification":
-                raise RuntimeError(
-                    f"Сейчас ai_service поддерживает только classification. "
-                    f"Получено: {model_row.model_type}"
-                )
-
-            if model_row.architecture != "ResNet18":
-                raise RuntimeError(
-                    f"Сейчас поддерживается только ResNet18. "
-                    f"Получено: {model_row.architecture}"
+                    f"Активная модель имеет статус '{model_row.status}', "
+                    f"а нужен 'available' или 'experimental'"
                 )
 
             if not model_row.weights_path:
@@ -271,17 +137,45 @@ class AiService:
             if not weights_path.exists():
                 raise RuntimeError(f"Файл весов не найден: {weights_path}")
 
-            loaded_model, tf, classes, device = self._load_resnet18_checkpoint(weights_path)
+            loaded_model = None
+            tf = None
+            classes = None
+            device = None
+            yolo_device = None
 
-            if "crack" not in classes or "ok" not in classes:
-                raise RuntimeError(f"Ожидались классы crack/ok, получено: {classes}")
+            if model_row.model_type == "classification":
+                if model_row.architecture != "ResNet18":
+                    raise RuntimeError(
+                        f"Для classification сейчас поддерживается только ResNet18. "
+                        f"Получено: {model_row.architecture}"
+                    )
+
+                loaded_model, tf, classes, device = self._load_resnet18_checkpoint(weights_path)
+
+                if "crack" not in classes or "ok" not in classes:
+                    raise RuntimeError(f"Ожидались классы crack/ok, получено: {classes}")
+
+            elif model_row.model_type == "detection":
+                if not str(model_row.architecture).lower().startswith("yolo"):
+                    raise RuntimeError(
+                        f"Для detection сейчас поддерживается YOLO. "
+                        f"Получено: {model_row.architecture}"
+                    )
+
+                loaded_model, tf, classes, device, yolo_device = self._load_yolo_checkpoint(weights_path)
+
+            else:
+                raise RuntimeError(
+                    f"Неподдерживаемый тип модели: {model_row.model_type}. "
+                    f"Ожидалось classification или detection"
+                )
 
             with self._lock:
                 self.model = loaded_model
                 self.tf = tf
                 self.classes = classes
                 self.device = device
-
+                self.yolo_device = yolo_device
                 self.active_model_id = model_row.id
                 self.active_model_key = model_row.model_key
                 self.active_model_name = model_row.name
@@ -329,9 +223,40 @@ class AiService:
             selected_mode = mode or self.active_default_mode or "balanced"
             modes = self.active_modes or {}
             active_threshold = self.active_threshold
+            active_confidence_threshold = self.active_confidence_threshold
+            active_model_type = self.active_model_type
 
         if selected_mode in modes:
-            return float(modes[selected_mode])
+            mode_value = modes[selected_mode]
+
+            # Старый вариант: "balanced": 0.465
+            if isinstance(mode_value, (int, float)):
+                return float(mode_value)
+
+            # Новый вариант: "balanced": {"threshold": 0.465}
+            # или "detection": {"confidence_threshold": 0.25}
+            if isinstance(mode_value, dict):
+                if active_model_type == "detection":
+                    value = (
+                        mode_value.get("confidence_threshold")
+                        or mode_value.get("threshold")
+                        or active_confidence_threshold
+                        or 0.25
+                    )
+                    return float(value)
+
+                value = mode_value.get("threshold") or active_threshold
+                if value is not None:
+                    return float(value)
+
+        if active_model_type == "detection":
+            if active_confidence_threshold is not None:
+                return float(active_confidence_threshold)
+
+            if active_threshold is not None:
+                return float(active_threshold)
+
+            return 0.25
 
         if active_threshold is not None:
             return float(active_threshold)
@@ -359,7 +284,91 @@ class AiService:
                 "metrics": self.active_metrics,
                 "loaded": self.model is not None,
             }
+    def _predict_yolo_pil(
+        self,
+        pil_img: Image.Image,
+        actual_threshold: float,
+        mode: Optional[str] = None,
+    ):
+        with self._lock:
+            model = self.model
+            yolo_device = self.yolo_device or "cpu"
 
+            model_id = self.active_model_id
+            model_key = self.active_model_key
+            model_name = self.active_model_name
+            model_type = self.active_model_type
+            architecture = self.active_architecture
+
+            iou_threshold = self.active_iou_threshold or 0.45
+            classes = self.classes or []
+
+        results = model.predict(
+            source=pil_img,
+            conf=float(actual_threshold),
+            iou=float(iou_threshold),
+            device=yolo_device,
+            verbose=False,
+        )
+
+        result = results[0]
+
+        detections = []
+        max_conf = 0.0
+        best_bbox = None
+
+        names = model.names or {}
+
+        if result.boxes is not None:
+            for box in result.boxes:
+                xyxy = box.xyxy[0].detach().cpu().tolist()
+                cls_id = int(box.cls[0].detach().cpu().item())
+                box_conf = float(box.conf[0].detach().cpu().item())
+
+                if isinstance(names, dict):
+                    class_name = names.get(cls_id, str(cls_id))
+                else:
+                    class_name = str(cls_id)
+
+                detection = {
+                    "x1": float(xyxy[0]),
+                    "y1": float(xyxy[1]),
+                    "x2": float(xyxy[2]),
+                    "y2": float(xyxy[3]),
+                    "confidence": box_conf,
+                    "class_id": cls_id,
+                    "class_name": class_name,
+                }
+
+                detections.append(detection)
+
+                if box_conf > max_conf:
+                    max_conf = box_conf
+                    best_bbox = detection
+
+        verdict = "CRACK" if max_conf >= float(actual_threshold) else "OK"
+        p_ok = 1.0 - max_conf if max_conf <= 1.0 else 0.0
+
+        return {
+            "model_id": model_id,
+            "model_key": model_key,
+            "model_name": model_name,
+            "model_type": model_type,
+            "architecture": architecture,
+
+            "verdict": verdict,
+            "p_crack": float(max_conf),
+            "p_ok": float(p_ok),
+            "confidence": float(max_conf),
+            "threshold": float(actual_threshold),
+            "mode": mode or "detection",
+            "classes": classes,
+
+            # Для сохранения bbox в БД
+            "detections": detections,
+            "best_bbox": best_bbox,
+            "bbox_count": len(detections),
+        }
     @torch.no_grad()
     def predict_pil(
         self,
@@ -382,7 +391,14 @@ class AiService:
             model_name = self.active_model_name
             model_type = self.active_model_type
             architecture = self.active_architecture
-
+            
+            
+        if model_type == "detection":
+            return self._predict_yolo_pil(
+                pil_img=pil_img,
+                actual_threshold=actual_threshold,
+                mode=mode,
+            )
         x = tf(pil_img).unsqueeze(0).to(device)
 
         logits = model(x)
@@ -413,8 +429,11 @@ class AiService:
             "mode": mode or self.active_default_mode or "balanced",
             "classes": classes,
 
-            # Для совместимости с будущим YOLO
+          
+            # Для совместимости с YOLO
             "detections": [],
+            "best_bbox": None,
+            "bbox_count": 0,
         }
 
 
