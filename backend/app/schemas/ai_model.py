@@ -38,3 +38,23 @@ class AiModelSettingsUpdate(BaseModel):
 
     status: Optional[str] = None
     description: Optional[str] = None
+    
+class AiModelCreate(BaseModel):
+    model_key: str
+    name: str
+    model_type: str
+    architecture: str
+
+    weights_path: Optional[str] = None
+    classes: Optional[list[str]] = None
+
+    status: str = "available"
+    default_mode: Optional[str] = "balanced"
+
+    threshold: Optional[float] = None
+    confidence_threshold: Optional[float] = None
+    iou_threshold: Optional[float] = None
+
+    modes: Optional[dict[str, Any]] = None
+    metrics: Optional[dict[str, Any]] = None
+    description: Optional[str] = None

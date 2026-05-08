@@ -231,6 +231,12 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  
+  createAiModel: (payload) =>
+    request("/ai/models", {
+      method: "POST",
+      body: payload,
+    }),
 
   getActiveAiModelRuntime: () =>
   request("/ai/models/active/runtime", {

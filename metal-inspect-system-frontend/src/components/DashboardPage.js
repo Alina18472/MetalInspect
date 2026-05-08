@@ -4,6 +4,61 @@ import "../styles/dashboard.css";
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
 
+const resolveImageUrl = (url) => {
+  if (!url) return null;
+
+  // MinIO / S3 presigned URL уже приходит полным адресом
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  // Старые локальные ссылки FastAPI: /media/..., /stream-images/...
+  const cleanBase = API_BASE_URL.replace(/\/$/, "");
+  const cleanPath = url.startsWith("/") ? url : `/${url}`;
+
+  return `${cleanBase}${cleanPath}`;
+};const getRenderedImageBox = (img) => {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+
+  const imgRect = img.getBoundingClientRect();
+  const parentRect = img.parentElement?.getBoundingClientRect();
+
+  const elementOffsetX = parentRect ? imgRect.left - parentRect.left : 0;
+  const elementOffsetY = parentRect ? imgRect.top - parentRect.top : 0;
+
+  const elementWidth = imgRect.width;
+  const elementHeight = imgRect.height;
+
+  const imageRatio = img.naturalWidth / img.naturalHeight;
+  const elementRatio = elementWidth / elementHeight;
+  
+  let renderedWidth;
+  let renderedHeight;
+  let innerOffsetX = 0;
+  let innerOffsetY = 0;
+
+  if (elementRatio > imageRatio) {
+    renderedHeight = elementHeight;
+    renderedWidth = elementHeight * imageRatio;
+    innerOffsetX = (elementWidth - renderedWidth) / 2;
+  } else {
+    renderedWidth = elementWidth;
+    renderedHeight = elementWidth / imageRatio;
+    innerOffsetY = (elementHeight - renderedHeight) / 2;
+  }
+
+  return {
+    width: renderedWidth,
+    height: renderedHeight,
+    naturalWidth: img.naturalWidth,
+    naturalHeight: img.naturalHeight,
+
+    // важно: учитываем и смещение img внутри родителя,
+    // и внутренние отступы от object-fit: contain
+    offsetX: elementOffsetX + innerOffsetX,
+    offsetY: elementOffsetY + innerOffsetY,
+  };
+};
 const Dashboard = () => {
   const [shiftStatus, setShiftStatus] = useState(null);
   const [cameraStatus, setCameraStatus] = useState(null);
@@ -15,7 +70,7 @@ const Dashboard = () => {
   const [shiftStats, setShiftStats] = useState(null);
   const [activeModel, setActiveModel] = useState(null);
   const [delaySec, setDelaySec] = useState("0.7");
-
+  const [decisionComment, setDecisionComment] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const loadingDashboardRef = useRef(false);
@@ -25,6 +80,17 @@ const Dashboard = () => {
   const [imageBox, setImageBox] = useState(null);
   const modalImgRef = useRef(null);
   const [modalImageBox, setModalImageBox] = useState(null);
+  const [mesConfirmModal, setMesConfirmModal] = useState({
+    isOpen: false,
+    event: null,
+    isSubmitting: false,
+  });
+
+
+
+
+
+
   const loadDashboardData = async () => {
     if (loadingDashboardRef.current) return;
   
@@ -57,9 +123,7 @@ const Dashboard = () => {
         mode: item.mode,
         framesCount: item.frames_count,
         verdict: item.verdict,
-        bestFrameUrl: item.best_frame_url
-          ? `${API_BASE_URL}${item.best_frame_url}`
-          : null,
+        bestFrameUrl: resolveImageUrl(item.best_frame_url),
         aiModelId: item.ai_model_id,
         aiModelKey: item.ai_model_key,
         aiModelName: item.ai_model_name,
@@ -173,6 +237,17 @@ const Dashboard = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      updateImageBox();
+      updateModalImageBox();
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const handleStartShift = async () => {
     if (!cameraStatus?.running) {
       setError("Сначала запустите камеру.");
@@ -239,13 +314,8 @@ const Dashboard = () => {
   };
 
   const confirmEvent = async (event) => {
-    const comment = window.prompt(
-      "Комментарий к подтверждению:",
-      "Трещина подтверждена"
-    );
-
-    if (comment === null) return;
-
+    const comment = decisionComment.trim() || "Трещина подтверждена визуально";
+  
     try {
       await api.confirmDefect(event.defectDbId, comment);
       await loadDashboardData();
@@ -254,15 +324,10 @@ const Dashboard = () => {
       alert(e?.message || "Не удалось подтвердить дефект");
     }
   };
-
+  
   const rejectEvent = async (event) => {
-    const comment = window.prompt(
-      "Комментарий к отклонению:",
-      "Ложное срабатывание"
-    );
-
-    if (comment === null) return;
-
+    const comment = decisionComment.trim() || "Ложное срабатывание";
+  
     try {
       await api.rejectDefect(event.defectDbId, comment);
       await loadDashboardData();
@@ -271,29 +336,83 @@ const Dashboard = () => {
       alert(e?.message || "Не удалось отклонить дефект");
     }
   };
-  const sendToMes = async (event) => {
+  
+  const openEventDetails = (event) => {
+    setSelectedEvent(event);
+  
+    if (event.status === "pending") {
+      setDecisionComment("");
+    } else {
+      setDecisionComment(event.comment || "");
+    }
+  
+    setIsModalOpen(true);
+  };
+  
+  
+ 
+  const sendToMes = (event) => {
     if (!event?.defectDbId) return;
   
-    const ok = window.confirm(
-      `Передать дефект по слитку ${event.id} в MES?`
-    );
+    setError("");
   
-    if (!ok) return;
+    setMesConfirmModal({
+      isOpen: true,
+      event,
+      isSubmitting: false,
+    });
+  };
+  
+  const closeMesConfirmModal = () => {
+    if (mesConfirmModal.isSubmitting) return;
+  
+    setMesConfirmModal({
+      isOpen: false,
+      event: null,
+      isSubmitting: false,
+    });
+  };
+  
+  const confirmSendToMes = async () => {
+    const event = mesConfirmModal.event;
+  
+    if (!event?.defectDbId) {
+      closeMesConfirmModal();
+      return;
+    }
+  
+    setMesConfirmModal((prev) => ({
+      ...prev,
+      isSubmitting: true,
+    }));
+  
+    setIsLoading(true);
+    setError("");
   
     try {
       await api.sendDefectToMes(event.defectDbId);
       await loadDashboardData();
+  
+      setMesConfirmModal({
+        isOpen: false,
+        event: null,
+        isSubmitting: false,
+      });
+  
       setIsModalOpen(false);
     } catch (e) {
-      alert(e?.message || "Не удалось передать дефект в MES");
+      setError(e?.message || "Не удалось передать дефект в MES");
+  
+      setMesConfirmModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+      }));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const openEventDetails = (event) => {
-    setSelectedEvent(event);
-    setIsModalOpen(true);
-  };
-
+ 
   const getConfidenceClass = (confidence) => {
     if (confidence > 0.9) return "high-confidence";
     if (confidence > 0.8) return "medium-confidence";
@@ -321,6 +440,34 @@ const Dashboard = () => {
     };
 
     return map[status] || status || "Ожидает проверки";
+  };
+  const getStatusBadgeClass = (status) => {
+    const map = {
+      pending: "warning",
+      confirmed: "success",
+      rejected: "muted",
+      sent_to_mes: "primary",
+    };
+  
+    return map[status] || "muted";
+  };
+  
+  const getModalVerdictText = (event) => {
+    if (!event) return "—";
+  
+    const verdict = String(event.verdict || "").toUpperCase();
+  
+    if (verdict === "CRACK" || verdict === "DEFECT") return "CRACK";
+    if (verdict === "OK") return "OK";
+  
+    return event.defectType || "crack";
+  };
+  
+  const getModalVerdictClass = (event) => {
+    const verdict = String(event?.verdict || "").toUpperCase();
+  
+    if (verdict === "OK") return "success";
+    return "danger";
   };
 
   const latestEvent = eventsData[0] || null;
@@ -350,7 +497,26 @@ const Dashboard = () => {
 
   const liveIngot =
     liveFrame?.ingot_id || cameraStatus?.current_ingot;
-
+    const isSourceIngotId = (value) => {
+      if (!value) return false;
+      return /^ingot_\d+/i.test(String(value));
+    };
+    
+    const displayIngotId =
+      liveFrame?.system_ingot_id ||
+      liveFrame?.inspection_ingot_id ||
+      liveFrame?.current_ingot_id ||
+      shiftStatus?.current_ingot_id ||
+      shiftStatus?.current_system_ingot_id ||
+      shiftStatus?.last_result?.ingot_id ||
+      null;
+    
+    const safeDisplayIngotId =
+      displayIngotId && !isSourceIngotId(displayIngotId)
+        ? displayIngotId
+        : shiftStatus?.running
+        ? "Формируется..."
+        : "—";
   const liveFrameIndex =
     liveFrame?.frame_index || cameraStatus?.current_frame_index;
 
@@ -368,32 +534,34 @@ const Dashboard = () => {
     shiftStatus?.current_frame_verdict ||
     null;
   
-  const updateImageBox = () => {
-  const img = frameImgRef.current;
-  if (!img) return;
-
-  const rect = img.getBoundingClientRect();
-
-  setImageBox({
-    width: rect.width,
-    height: rect.height,
-    naturalWidth: img.naturalWidth,
-    naturalHeight: img.naturalHeight,
-  });
-};
-const updateModalImageBox = () => {
-  const img = modalImgRef.current;
-  if (!img) return;
-
-  const rect = img.getBoundingClientRect();
-
-  setModalImageBox({
-    width: rect.width,
-    height: rect.height,
-    naturalWidth: img.naturalWidth,
-    naturalHeight: img.naturalHeight,
-  });
-};
+   
+    
+    const updateImageBox = () => {
+      const box = getRenderedImageBox(frameImgRef.current);
+      if (box) setImageBox(box);
+    };
+    
+    const updateModalImageBox = () => {
+      const box = getRenderedImageBox(modalImgRef.current);
+      if (box) setModalImageBox(box);
+    };
+    useEffect(() => {
+      if (!isModalOpen) return;
+    
+      const recalculate = () => {
+        updateModalImageBox();
+      };
+    
+      requestAnimationFrame(recalculate);
+    
+      const timer1 = setTimeout(recalculate, 50);
+      const timer2 = setTimeout(recalculate, 200);
+    
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }, [isModalOpen, selectedEvent?.bestFrameUrl]);
 
 const getLiveDetections = () => {
   if (Array.isArray(liveFrame?.detections)) return liveFrame.detections;
@@ -438,6 +606,36 @@ const normalizeBbox = (det) => {
       x2 = raw.x2;
       y2 = raw.y2;
     } else if (
+      raw.x_min !== undefined &&
+      raw.y_min !== undefined &&
+      raw.x_max !== undefined &&
+      raw.y_max !== undefined
+    ) {
+      x1 = raw.x_min;
+      y1 = raw.y_min;
+      x2 = raw.x_max;
+      y2 = raw.y_max;
+    } else if (
+      raw.xmin !== undefined &&
+      raw.ymin !== undefined &&
+      raw.xmax !== undefined &&
+      raw.ymax !== undefined
+    ) {
+      x1 = raw.xmin;
+      y1 = raw.ymin;
+      x2 = raw.xmax;
+      y2 = raw.ymax;
+    } else if (
+      raw.left !== undefined &&
+      raw.top !== undefined &&
+      raw.right !== undefined &&
+      raw.bottom !== undefined
+    ) {
+      x1 = raw.left;
+      y1 = raw.top;
+      x2 = raw.right;
+      y2 = raw.bottom;
+    } else if (
       raw.x !== undefined &&
       raw.y !== undefined &&
       raw.width !== undefined &&
@@ -447,6 +645,16 @@ const normalizeBbox = (det) => {
       y1 = raw.y;
       x2 = raw.x + raw.width;
       y2 = raw.y + raw.height;
+    } else if (
+      raw.x !== undefined &&
+      raw.y !== undefined &&
+      raw.w !== undefined &&
+      raw.h !== undefined
+    ) {
+      x1 = raw.x;
+      y1 = raw.y;
+      x2 = raw.x + raw.w;
+      y2 = raw.y + raw.h;
     }
   }
 
@@ -457,8 +665,31 @@ const normalizeBbox = (det) => {
 
   if ([x1, y1, x2, y2].some((v) => Number.isNaN(v))) return null;
 
+  if (x2 < x1) [x1, x2] = [x2, x1];
+  if (y2 < y1) [y1, y2] = [y2, y1];
+
   return { x1, y1, x2, y2 };
 };
+const isDetectionModel = (modelType, architecture) => {
+  const value = `${modelType || ""} ${architecture || ""}`.toLowerCase();
+
+  return (
+    value.includes("detection") ||
+    value.includes("detector") ||
+    value.includes("yolo")
+  );
+};
+const selectedEventDetections = getSelectedEventDetections();
+
+const selectedEventUsesBbox =
+  selectedEvent &&
+  (
+    isDetectionModel(
+      selectedEvent.aiModelType,
+      selectedEvent.aiModelArchitecture
+    ) ||
+    selectedEventDetections.length > 0
+  );
 const getBboxStyle = (det, targetImageBox = imageBox) => {
   if (!targetImageBox) return null;
 
@@ -469,7 +700,7 @@ const getBboxStyle = (det, targetImageBox = imageBox) => {
 
   const maxCoord = Math.max(x1, y1, x2, y2);
 
-  // Если координаты нормализованные 0..1
+  // Координаты нормализованы в диапазоне 0..1
   if (maxCoord <= 1) {
     x1 *= targetImageBox.naturalWidth;
     x2 *= targetImageBox.naturalWidth;
@@ -481,320 +712,222 @@ const getBboxStyle = (det, targetImageBox = imageBox) => {
   const scaleY = targetImageBox.height / targetImageBox.naturalHeight;
 
   return {
-    left: `${x1 * scaleX}px`,
-    top: `${y1 * scaleY}px`,
+    left: `${targetImageBox.offsetX + x1 * scaleX}px`,
+    top: `${targetImageBox.offsetY + y1 * scaleY}px`,
     width: `${(x2 - x1) * scaleX}px`,
     height: `${(y2 - y1) * scaleY}px`,
   };
 };
   
+const cameraRunning = Boolean(cameraStatus?.running);
+const shiftRunning = Boolean(shiftStatus?.running);
+
+const liveImageUrl = liveFrame?.frame_url
+  ? resolveImageUrl(liveFrame.frame_url)
+  : cameraStatus?.current_frame_url
+  ? resolveImageUrl(cameraStatus.current_frame_url)
+  : latestEvent?.bestFrameUrl || null;
+
+const modelName =
+  shiftStatus?.active_model_name || activeModel?.name || "—";
+
+const modelArchitecture =
+  shiftStatus?.active_model_architecture ||
+  activeModel?.architecture ||
+  "—";
+
+const modelType =
+  liveFrame?.model_type ||
+  shiftStatus?.active_model_type ||
+  activeModel?.model_type ||
+  "—";
+
+const modelMode =
+  shiftStatus?.mode || activeModel?.default_mode || "—";
+
+const modelThreshold =
+  shiftStatus?.threshold !== null && shiftStatus?.threshold !== undefined
+    ? Number(shiftStatus.threshold).toFixed(3)
+    : activeModel?.threshold !== null && activeModel?.threshold !== undefined
+    ? Number(activeModel.threshold).toFixed(3)
+    : "—";
+
+const liveBboxCount =
+  liveFrame?.bbox_count ??
+  shiftStatus?.current_bbox_count ??
+  getLiveDetections().length ??
+  0;
+
+  const normalizedLiveVerdict = String(liveVerdict || "").toUpperCase();
+
+  const liveStatusText = shiftRunning
+    ? normalizedLiveVerdict === "CRACK" || normalizedLiveVerdict === "DEFECT"
+      ? "DEFECT"
+      : normalizedLiveVerdict === "OK"
+      ? "OK"
+      : "ANALYSIS"
+    : "IDLE";
+
+const liveStatusClass =
+  liveStatusText === "DEFECT"
+    ? "danger"
+    : liveStatusText === "OK"
+    ? "success"
+    : shiftRunning
+    ? "primary"
+    : "muted";
+
+const formatPercent = (value) => {
+  if (value === null || value === undefined) return "—";
+  return `${Math.round(Number(value) * 100)}%`;
+};
+
+const formatNumber = (value, digits = 3) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "—";
+  }
+
+  return Number(value).toFixed(digits);
+};
+
+const renderBboxes = (detections, targetImageBox = imageBox) =>
+  detections.map((det, index) => {
+    const style = getBboxStyle(det, targetImageBox);
+
+    if (!style) return null;
+
+    const conf =
+      det.confidence ??
+      det.conf ??
+      det.score ??
+      det.probability ??
+      null;
+
+    return (
+      <div key={index} className="bbox-box" style={style}>
+        <div className="bbox-label">
+          crack
+          {conf !== null && conf !== undefined
+            ? ` ${(Number(conf) * 100).toFixed(1)}%`
+            : ""}
+        </div>
+      </div>
+    );
+  });
+  const getConfidenceTextClass = (confidence) => {
+    const value = Number(confidence);
+  
+    if (Number.isNaN(value)) return "confidence-text-muted";
+    if (value >= 0.9) return "confidence-text-high";
+    if (value >= 0.8) return "confidence-text-medium";
+  
+    return "confidence-text-low";
+  };
   return (
     <div className="dashboard-page">
       <div className="dashboard-container">
         <TopNav
-          subtitle="Система распознавания трещин в слитках • Главный экран оператора"
+          subtitle="Система распознавания трещин в слитках - Главный экран"
           userName="Оператор системы"
-          userRole="Контроль качества • AI-зрение"
+          userRole="Контроль качества"
         />
 
-        <div className="dashboard-main-content">
-          <div className="video-panel">
-            <div className="video-header">
-              <h2>
-                <i className="fas fa-video"></i> Имитация видеопотока контроля
-              </h2>
+        <div className="operator-layout">
+          <section className="operator-camera-card">
+            <div className="operator-card-header">
+              <div>
+                <h2>
+                  <i className="fas fa-video"></i> Live camera monitoring
+                </h2>
+                <p>Имитация видеопотока из папки stream_images</p>
+              </div>
 
-              <div className="camera-info">
-                <i className="fas fa-camera"></i>
-                <span>
-                Источник: папка stream_images; Активная модель:{" "}
-                {shiftStatus?.active_model_name || activeModel?.name || "—"}
-              </span>
+              <div className="header-badges">
+                <span className={`status-badge ${cameraRunning ? "success" : "muted"}`}>
+                  {cameraRunning ? "CAMERA ONLINE" : "CAMERA OFFLINE"}
+                </span>
+
+                <span className={`status-badge ${wsConnected ? "success" : "danger"}`}>
+                  {wsConnected ? "WS CONNECTED" : "WS OFFLINE"}
+                </span>
               </div>
             </div>
 
-            <div className="video-container">
-            {liveFrame?.frame_url ? (
-            <img
-              ref={frameImgRef}
-              src={`${API_BASE_URL}${liveFrame.frame_url}`}
-              alt={liveFrame.frame_name || "Кадр камеры"}
-              onLoad={updateImageBox}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : cameraStatus?.current_frame_url ? (
-            <img
-              ref={frameImgRef}
-              src={`${API_BASE_URL}${cameraStatus.current_frame_url}`}
-              alt={cameraStatus.current_frame_name || "Кадр камеры"}
-              onLoad={updateImageBox}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : latestEvent?.bestFrameUrl ? (
-            <img
-              src={latestEvent.bestFrameUrl}
-              alt={`Лучший кадр ${latestEvent.id}`}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : (
-            <div className="video-placeholder"></div>
-          )}
-          {/* BBOX overlay для YOLO */}
-          {getLiveDetections().map((det, index) => {
-            const style = getBboxStyle(det);
-
-            if (!style) return null;
-
-            const conf =
-              det.confidence ??
-              det.conf ??
-              det.score ??
-              det.probability ??
-              null;
-
-            return (
-              <div
-                key={index}
-                style={{
-                  position: "absolute",
-                  ...style,
-                  border: "2px solid #ff4d4f",
-                  borderRadius: "4px",
-                  pointerEvents: "none",
-                  boxShadow: "0 0 10px rgba(255, 77, 79, 0.8)",
-                  zIndex: 5,
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: "-24px",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    background: "rgba(255, 77, 79, 0.9)",
-                    color: "#fff",
-                    fontSize: "12px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  crack
-                  {conf !== null && conf !== undefined
-                    ? ` ${(Number(conf) * 100).toFixed(1)}%`
-                    : ""}
+            <div className={`camera-frame-shell ${liveStatusClass}`}>
+              {liveImageUrl ? (
+                <img
+                  ref={frameImgRef}
+                  src={liveImageUrl}
+                  alt={liveFrameName || "Кадр камеры"}
+                  onLoad={updateImageBox}
+                  className="camera-frame-img"
+                />
+              ) : (
+                <div className="video-placeholder">
+                  <div className="empty-camera-state">
+                    <i className="fas fa-image"></i>
+                    <span>Кадр камеры пока недоступен</span>
+                  </div>
                 </div>
+              )}
+
+              {renderBboxes(getLiveDetections())}
+
+              <div className="camera-top-overlay">
+                <span className={`status-badge ${liveStatusClass}`}>
+                  {liveStatusText}
+                </span>
+
+                <span className="status-badge dark">
+                  BBOX: {liveBboxCount}
+                </span>
               </div>
-            );
-          })}
-         
-               
-              <div className="video-overlay">
-                <div
-                  style={{
-                    position: "absolute",
-                    left: "20px",
-                    top: "20px",
-                    padding: "14px 18px",
-                    borderRadius: "10px",
-                    background: "rgba(0, 0, 0, 0.65)",
-                    color: "#e0e0e0",
-                    maxWidth: "520px",
-                    lineHeight: "1.6",
-                  }}
-                >
-                  <div>
-                    <strong>WebSocket:</strong>{" "}
-                    {wsConnected ? "подключён" : "отключён"}
-                  </div>
 
-                  <div>
-                    <strong>Камера:</strong>{" "}
-                    {cameraStatus?.running ? "работает" : "остановлена"}
-                  </div>
-                  <div>
-                    <strong>ID смены:</strong>{" "}
-                    {currentShiftId || "—"}
-                  </div>
+              <div className="camera-bottom-overlay">
+                <div>
+                  <span className="overlay-label">Слиток</span>
+                  <strong>{safeDisplayIngotId}</strong>
+                </div>
 
-                  <div>
-                    <strong>Статус смены:</strong>{" "}
-                    <div>
-                      <strong>Активная модель:</strong>{" "}
-                      {shiftStatus?.active_model_name || activeModel?.name || "—"}
-                    </div>
+                <div>
+                  <span className="overlay-label">Кадр</span>
+                  <strong>{liveFrameIndex || "—"}</strong>
+                </div>
 
-                    <div>
-                      <strong>Архитектура:</strong>{" "}
-                      {shiftStatus?.active_model_architecture || activeModel?.architecture || "—"}
-                    </div>
+                <div>
+                  <span className="overlay-label">Файл</span>
+                  <strong>{liveFrameName || "—"}</strong>
+                </div>
 
-                    <div>
-                      <strong>Режим модели:</strong>{" "}
-                      {shiftStatus?.mode || activeModel?.default_mode || "—"}
-                    </div>
-
-                    <div>
-                      <strong>Threshold:</strong>{" "}
-                      {shiftStatus?.threshold !== null && shiftStatus?.threshold !== undefined
-                        ? Number(shiftStatus.threshold).toFixed(3)
-                        : activeModel?.threshold !== null && activeModel?.threshold !== undefined
-                        ? Number(activeModel.threshold).toFixed(3)
-                        : "—"}
-                    </div>
-                    {shiftStatus?.running ? "идёт обработка" : "не запущена / завершена"}
-                  </div>
-
-                  <div>
-                    <strong>Текущий слиток:</strong>{" "}
-                    {liveIngot || "—"}
-                  </div>
-
-                  <div>
-                    <strong>Текущий кадр:</strong>{" "}
-                    {liveFrameName || "—"}
-                  </div>
-
-                  <div>
-                    <strong>Кадр в слитке:</strong>{" "}
-                    {liveFrameIndex || "—"}
-                  </div>
-
-                  {/* <div>
-                    <strong>p_crack кадра:</strong>{" "}
-                    {livePCrack !== null && livePCrack !== undefined
-                      ? Number(livePCrack).toFixed(3)
-                      : "—"}
-                  </div>
-
-                  <div>
-                    <strong>Вердикт кадра:</strong>{" "}
-                    {liveVerdict || "—"}
-                  </div> */}
-                  <div>
-                    <strong>Тип модели:</strong>{" "}
-                    {liveFrame?.model_type || shiftStatus?.active_model_type || "—"}
-                  </div>
-
-                  <div>
-                    <strong>Найдено bbox:</strong>{" "}
-                    {liveFrame?.bbox_count ??
-                      shiftStatus?.current_bbox_count ??
-                      (Array.isArray(liveFrame?.detections) ? liveFrame.detections.length : 0)}
-                  </div>
-
-                  {shiftStatus?.last_result && (
-                    <div>
-                      <strong>Последний результат AI:</strong>{" "}
-                      {shiftStatus.last_result.ingot_id} —{" "}
-                      {shiftStatus.last_result.verdict}, max_p_crack=
-                      {Number(shiftStatus.last_result.max_p_crack || 0).toFixed(3)}
-                    </div>
-                  )}
-
-                  <div>
-                    <strong>Прогресс:</strong> {processedIngots} / {totalIngots}
-                  </div>
-
-                  <div>
-                    <strong>Последнее сообщение:</strong>{" "}
-                    {shiftStatus?.message || "Нет данных"}
-                  </div>
-
-                  {shiftStatus?.last_result && (
-                    <div>
-                      <strong>Последний результат:</strong>{" "}
-                      {shiftStatus.last_result.ingot_id} —{" "}
-                      {shiftStatus.last_result.verdict}, max_p_crack=
-                      {Number(shiftStatus.last_result.max_p_crack || 0).toFixed(3)}
-                    </div>
-                  )}
+                <div>
+                  <span className="overlay-label">p_crack</span>
+                  <strong>{formatNumber(livePCrack)}</strong>
                 </div>
               </div>
             </div>
 
-            <div className="video-controls">
-              <div
-                style={{
-                  display: "flex",
-                  gap: "10px",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
-              >
-              <span style={{ color: "#8fb4d9", fontSize: "0.85rem" }}>
-              задержка анализа, сек
-            </span>
+            <div className="operator-controls">
+              
+              <div className="control-actions">
+                {!cameraRunning ? (
+                  <button
+                    className="control-btn secondary"
+                    onClick={handleStartCamera}
+                    disabled={isLoading}
+                  >
+                    <i className="fas fa-video"></i> Запустить камеру
+                  </button>
+                ) : (
+                  <button
+                    className="control-btn secondary"
+                    onClick={handleStopCamera}
+                    disabled={isLoading || shiftRunning}
+                  >
+                    <i className="fas fa-video-slash"></i> Остановить камеру
+                  </button>
+                )}
 
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder="delay"
-                  value={delaySec}
-                  onChange={(e) => setDelaySec(e.target.value)}
-                  disabled={shiftStatus?.running}
-                  style={{
-                    width: "90px",
-                    padding: "10px",
-                    borderRadius: "6px",
-                    border: "1px solid rgba(60,120,180,0.4)",
-                    background: "rgba(20,30,45,0.9)",
-                    color: "#e0e0e0",
-                  }}
-                />
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0.05"
-                  placeholder="camera delay"
-                  value={cameraDelaySec}
-                  onChange={(e) => setCameraDelaySec(e.target.value)}
-                  disabled={cameraStatus?.running}
-                  style={{
-                    width: "110px",
-                    padding: "10px",
-                    borderRadius: "6px",
-                    border: "1px solid rgba(60,120,180,0.4)",
-                    background: "rgba(20,30,45,0.9)",
-                    color: "#e0e0e0",
-                  }}
-                />
-
-                  {!cameraStatus?.running ? (
-                    <button
-                      className="control-btn secondary"
-                      onClick={handleStartCamera}
-                      disabled={isLoading}
-                    >
-                      <i className="fas fa-video"></i> Запустить камеру
-                    </button>
-                  ) : (
-                    <button
-                      className="control-btn secondary"
-                      onClick={handleStopCamera}
-                      disabled={isLoading || shiftStatus?.running}
-                    >
-                      <i className="fas fa-video-slash"></i> Остановить камеру
-                    </button>
-                  )}
-
-                {!shiftStatus?.running ? (
-
+                {!shiftRunning ? (
                   <button
                     className="control-btn"
                     onClick={handleStartShift}
@@ -804,7 +937,7 @@ const getBboxStyle = (det, targetImageBox = imageBox) => {
                   </button>
                 ) : (
                   <button
-                    className="control-btn paused"
+                    className="control-btn danger-btn"
                     onClick={handleStopShift}
                     disabled={isLoading}
                   >
@@ -812,440 +945,479 @@ const getBboxStyle = (det, targetImageBox = imageBox) => {
                   </button>
                 )}
 
-                <button
-                  className="control-btn secondary"
-                  onClick={loadDashboardData}
-                  disabled={isLoading}
-                >
-                  <i className="fas fa-sync-alt"></i> Обновить
-                </button>
-              </div>
-
-              <div className="fps-indicator">
-                <i className="fas fa-tachometer-alt"></i>
-                Модель: {shiftStatus?.active_model_name || activeModel?.name || "—"} • Режим:{" "}
-                {shiftStatus?.mode || activeModel?.default_mode || "—"} • threshold:{" "}
-                {shiftStatus?.threshold !== null && shiftStatus?.threshold !== undefined
-                  ? Number(shiftStatus.threshold).toFixed(3)
-                  : activeModel?.threshold !== null && activeModel?.threshold !== undefined
-                  ? Number(activeModel.threshold).toFixed(3)
-                  : "—"}
-                </div>
-            </div>
-
-            {error && (
-              <div
-                style={{
-                  marginTop: "12px",
-                  color: "#f44336",
-                  fontWeight: "600",
-                }}
-              >
-                {error}
-              </div>
-            )}
-          </div>
-
-          <div className="stats-panel">
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "12px",
-                marginBottom: "20px",
-              }}
-            >
-              <div className="stat-card">
-                <div className="stat-value">{processedIngots}</div>
-                <div className="stat-label">Обработано слитков</div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-value">{totalCrack}</div>
-                <div className="stat-label">Дефектных</div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-value">{totalOk}</div>
-                <div className="stat-label">OK</div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-value">{defectRate.toFixed(1)}%</div>
-                <div className="stat-label">Доля дефектных</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{avgMaxPCrack.toFixed(3)}</div>
-                <div className="stat-label">Средний max_p_crack</div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-value">{avgFrames.toFixed(2)}</div>
-                <div className="stat-label">Среднее кадров</div>
+                
               </div>
             </div>
 
-            <div className="events-container">
-              <div className="panel-header">
-                <h2>
-                  <i className="fas fa-history"></i> Последние события
-                </h2>
+            {error && <div className="dashboard-error">{error}</div>}
+          </section>
 
-                <div style={{ color: "#8fb4d9", fontSize: "0.9rem" }}>
-                  <i
-                    className="fas fa-sync-alt"
-                    style={{ cursor: "pointer" }}
-                    onClick={loadDashboardData}
-                  ></i>
+          <aside className="operator-side-panel">
+            <details className="dashboard-section status-card" open>
+              <summary className="side-card-title">
+                <span>
+                  <i className="fas fa-industry"></i>
+                  Состояние системы
+                </span>
+                <i className="fas fa-chevron-down accordion-icon"></i>
+              </summary>
+
+              <div className="status-grid">
+                <div className="status-row">
+                  <span>Камера</span>
+                  <strong>{cameraRunning ? "Работает" : "Остановлена"}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Смена</span>
+                  <strong>{shiftRunning ? "Идёт обработка" : "Не запущена"}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>ID смены</span>
+                  <strong>{currentShiftId || "—"}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>ID слитка</span>
+                  <strong>{safeDisplayIngotId}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Обработано</span>
+                  <strong>{processedIngots}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Сообщение</span>
+                  <strong>{shiftStatus?.message || "Нет данных"}</strong>
                 </div>
               </div>
+            </details>
 
-              <div className="events-content">
-                <table className="events-table">
-                  <thead>
-                    <tr>
-                      <th>Время</th>
-                      <th>ID слитка</th>
-                      <th>Уверенность</th>
-                    </tr>
-                  </thead>
+            <details className="dashboard-section status-card">
+              <summary className="side-card-title">
+                <span>
+                  <i className="fas fa-brain"></i>
+                  Активная AI-модель
+                </span>
+                <i className="fas fa-chevron-down accordion-icon"></i>
+              </summary>
 
-                  <tbody>
-                    {eventsData.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan="3"
+              <div className="model-card-body">
+                <div className="model-name">{modelName}</div>
+
+                <div className="model-meta">
+                  <span>{modelArchitecture}</span>
+                  <span>{modelType}</span>
+                  <span>{modelMode}</span>
+                </div>
+
+                <div className="status-row">
+                  <span>Threshold</span>
+                  <strong>{modelThreshold}</strong>
+                </div>
+
+                {activeModel?.status && (
+                  <div className="status-row">
+                    <span>Статус модели</span>
+                    <strong>{activeModel.status}</strong>
+                  </div>
+                )}
+              </div>
+            </details>
+
+            <details className="dashboard-section stats-card" open>
+              <summary className="side-card-title">
+                <span>
+                  <i className="fas fa-chart-column"></i>
+                  Статистика смены
+                </span>
+                <i className="fas fa-chevron-down accordion-icon"></i>
+              </summary>
+
+              <div className="metrics-grid">
+                <div className="metric-card">
+                  <span>Обработано</span>
+                  <strong>{processedIngots}</strong>
+                </div>
+
+                <div className="metric-card success">
+                  <span>OK</span>
+                  <strong>{totalOk}</strong>
+                </div>
+
+                <div className="metric-card danger">
+                  <span>Дефектных</span>
+                  <strong>{totalCrack}</strong>
+                </div>
+
+                <div className="metric-card warning">
+                  <span>Доля дефектов</span>
+                  <strong>{formatNumber(defectRate, 1)}%</strong>
+                </div>
+              </div>
+            </details>
+
+            <details className="dashboard-section events-card" open>
+              <summary className="side-card-title events-title">
+                <span>
+                  <i className="fas fa-triangle-exclamation"></i>
+                  Последние дефекты
+                </span>
+
+                
+
+                <i className="fas fa-chevron-down accordion-icon"></i>
+              </summary>
+
+              <div className="defect-feed">
+                {eventsData.length === 0 ? (
+                  <div className="empty-events">
+                    <i className="fas fa-check-circle"></i>
+                    <span>Дефектных событий пока нет</span>
+                  </div>
+                ) : (
+                  eventsData.map((event) => (
+                    <button
+                      key={event.defectDbId}
+                      className="defect-feed-item"
+                      onClick={() => openEventDetails(event)}
+                    >
+                      <div className="defect-feed-main">
+                        <strong>{event.id}</strong>
+                        <span>{event.time}</span>
+                      </div>
+
+                      <div className="defect-feed-meta">
+                        <span>{event.aiModelType || "AI"}</span>
+                        <span>{formatPercent(event.confidence)}</span>
+                        <span>{getStatusText(event.status)}</span>
+                      </div>
+
+                      <div className="confidence-bar wide">
+                        <div
+                          className={`confidence-fill ${getConfidenceClass(event.confidence)}`}
                           style={{
-                            textAlign: "center",
-                            padding: "30px",
-                            color: "#8fb4d9",
+                            width: `${Math.round(event.confidence * 100)}%`,
                           }}
-                        >
-                          Событий дефектов пока нет
-                        </td>
-                      </tr>
-                    ) : (
-                      eventsData.map((event) => (
-                        <tr
-                          key={event.defectDbId}
-                          onClick={() => openEventDetails(event)}
-                          className="event-row"
-                        >
-                          <td className="event-time">{event.time}</td>
-                          <td className="event-id">{event.id}</td>
-                          <td>
-                            <div className="confidence-cell">
-                              <div className="confidence-bar">
-                                <div
-                                  className={`confidence-fill ${getConfidenceClass(
-                                    event.confidence
-                                  )}`}
-                                  style={{
-                                    width: `${Math.round(event.confidence * 100)}%`,
-                                  }}
-                                ></div>
-                              </div>
-                              <span>{Math.round(event.confidence * 100)}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                        ></div>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
-            </div>
-          </div>
+            </details>
+          </aside>
         </div>
-
         {selectedEvent && (
-          <div
-            className="modal-overlay"
-            style={modalStyle}
-            onClick={() => setIsModalOpen(false)}
-          >
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>Детализация дефекта</h3>
-                <button
-                  className="close-modal"
-                  onClick={() => setIsModalOpen(false)}
-                >
-                  &times;
-                </button>
-              </div>
+            <div
+              className="modal-overlay"
+              style={modalStyle}
+              onClick={() => setIsModalOpen(false)}
+            >
+              <div className="defect-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <div className="modal-title-block">
+                    <h3>Детализация дефекта</h3>
 
-              <div className="modal-body">
-              <div
-                  className="detail-image"
-                  style={{
-                    position: "relative",
-                    overflow: "hidden",
-                  }}
-                >
-                  {selectedEvent.bestFrameUrl ? (
-                    <>
-                      <img
-                        ref={modalImgRef}
-                        src={selectedEvent.bestFrameUrl}
-                        alt={`Лучший кадр ${selectedEvent.id}`}
-                        onLoad={updateModalImageBox}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          display: "block",
-                        }}
-                      />
+                    <p>
+                      {selectedEvent.id} • {selectedEvent.time}
+                    </p>
 
-                      {getSelectedEventDetections().map((det, index) => {
-                        const style = getBboxStyle(det, modalImageBox);
+                    <div className="modal-header-badges">
+                      <span className={`status-badge ${getModalVerdictClass(selectedEvent)}`}>
+                        {getModalVerdictText(selectedEvent)}
+                      </span>
 
-                        if (!style) return null;
+                      <span className="status-badge dark">
+                        {selectedEvent.aiModelName || selectedEvent.aiModelKey || "AI-модель"}
+                      </span>
 
-                        const conf =
-                          det.confidence ??
-                          det.conf ??
-                          det.score ??
-                          selectedEvent.confidence ??
-                          null;
-
-                        return (
-                          <div
-                            key={index}
-                            style={{
-                              position: "absolute",
-                              ...style,
-                              border: "2px solid #ff4d4f",
-                              borderRadius: "4px",
-                              pointerEvents: "none",
-                              boxShadow: "0 0 10px rgba(255, 77, 79, 0.8)",
-                              zIndex: 5,
-                            }}
-                          >
-                            <div
-                              style={{
-                                position: "absolute",
-                                left: 0,
-                                top: "-24px",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                background: "rgba(255, 77, 79, 0.9)",
-                                color: "#fff",
-                                fontSize: "12px",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              crack
-                              {conf !== null && conf !== undefined
-                                ? ` ${(Number(conf) * 100).toFixed(1)}%`
-                                : ""}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </>
-                  ) : (
-                    <div
-                      style={{
-                        textAlign: "center",
-                        color: "#8fb4d9",
-                        padding: "20px",
-                      }}
-                    >
-                      <i
-                        className="fas fa-image"
-                        style={{ fontSize: "3rem", marginBottom: "15px" }}
-                      ></i>
-                      <div>Изображение недоступно</div>
+                      <span className={`status-badge ${getStatusBadgeClass(selectedEvent.status)}`}>
+                        {getStatusText(selectedEvent.status)}
+                      </span>
                     </div>
-                  )}
+                  </div>
+
+                  <button
+                    className="close-modal"
+                    onClick={() => setIsModalOpen(false)}
+                  >
+                    &times;
+                  </button>
                 </div>
 
-                <div className="detail-info">
-                  <h3 style={{ color: "#e0e0e0", marginBottom: "10px" }}>
-                    Информация о дефекте
-                  </h3>
-
-                  <div className="detail-row">
-                    <span className="detail-label">ID слитка:</span>
-                    <span className="detail-value">{selectedEvent.id}</span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Время обнаружения:</span>
-                    <span className="detail-value">{selectedEvent.time}</span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Уверенность ИИ:</span>
-                    <span
-                      className={`detail-value ${getCriticalityClass(
-                        selectedEvent.confidence
-                      )}`}
-                    >
-                      {Math.round(selectedEvent.confidence * 100)}%
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">max_p_crack:</span>
-                    <span className="detail-value">
-                      {Number(selectedEvent.maxPCrack || 0).toFixed(3)}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Threshold:</span>
-                    <span className="detail-value">
-                      {Number(selectedEvent.threshold || 0).toFixed(3)}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Кадров в слитке:</span>
-                    <span className="detail-value">
-                      {selectedEvent.framesCount}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Критичность:</span>
-                    <span
-                      className={`detail-value ${getCriticalityClass(
-                        selectedEvent.confidence
-                      )}`}
-                    >
-                      {getCriticalityText(selectedEvent.confidence)}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Тип дефекта:</span>
-                    <span className="detail-value">Трещина</span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Статус проверки:</span>
-                    <span className="detail-value detail-warning">
-                      {getStatusText(selectedEvent.status)}
-                    </span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">MES-статус:</span>
-                    <span className="detail-value">
-                      {selectedEvent.status === "sent_to_mes"
-                        ? "Передано в MES"
-                        : selectedEvent.mesStatus || "Не передано"}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Время передачи в MES:</span>
-                    <span className="detail-value">
-                      {selectedEvent.sentToMesAt
-                        ? selectedEvent.sentToMesAt.replace("T", " ")
-                        : "—"}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Сообщение MES:</span>
-                    <span className="detail-value">
-                      {selectedEvent.mesMessage || "—"}
-                    </span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Модель:</span>
-                    <span className="detail-value">
-                      {selectedEvent.aiModelName || selectedEvent.aiModelKey || "—"}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Архитектура:</span>
-                    <span className="detail-value">
-                      {selectedEvent.aiModelArchitecture || "—"}
-                    </span>
-                  </div>
-
-                  <div className="detail-row">
-                    <span className="detail-label">Комментарий:</span>
-                    <span className="detail-value">{selectedEvent.comment}</span>
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: "20px",
-                      paddingTop: "15px",
-                      borderTop: "1px solid rgba(60, 120, 180, 0.3)",
-                    }}
-                  >
-                    {selectedEvent.status === "pending" && (
+                <div className="defect-modal-body">
+                  <div className="defect-image-panel">
+                    {selectedEvent.bestFrameUrl ? (
                       <>
-                        <button
-                          className="control-btn"
-                          style={{ width: "100%", marginBottom: "10px" }}
-                          onClick={() => confirmEvent(selectedEvent)}
-                        >
-                          <i className="fas fa-check-circle"></i> Подтвердить дефект
-                        </button>
+                        <img
+                          ref={modalImgRef}
+                          src={selectedEvent.bestFrameUrl}
+                          alt={`Лучший кадр ${selectedEvent.id}`}
+                          onLoad={() => {
+                            requestAnimationFrame(updateModalImageBox);
+                          }}
+                          className="defect-image"
+                        />
 
-                        <button
-                          className="control-btn secondary"
-                          style={{ width: "100%", marginBottom: "10px" }}
-                          onClick={() => rejectEvent(selectedEvent)}
-                        >
-                          <i className="fas fa-times-circle"></i> Отметить как ложное срабатывание
-                        </button>
+                        {selectedEventUsesBbox &&
+                          renderBboxes(selectedEventDetections, modalImageBox)}
+
+                        
                       </>
-                    )}
-
-                    {selectedEvent.status === "confirmed" && (
-                      <button
-                        className="control-btn"
-                        style={{ width: "100%", marginBottom: "10px" }}
-                        onClick={() => sendToMes(selectedEvent)}
-                      >
-                        <i className="fas fa-paper-plane"></i> Передать в MES
-                      </button>
-                    )}
-
-                    {selectedEvent.status === "sent_to_mes" && (
-                      <div
-                        style={{
-                          padding: "12px",
-                          borderRadius: "8px",
-                          background: "rgba(76, 175, 80, 0.15)",
-                          color: "#a5d6a7",
-                          textAlign: "center",
-                          fontWeight: "600",
-                        }}
-                      >
-                        <i className="fas fa-check-circle"></i> Дефект передан в MES
+                    ) : (
+                      <div className="empty-camera-state">
+                        <i className="fas fa-image"></i>
+                        <span>Изображение недоступно</span>
                       </div>
                     )}
+                  </div>
 
-                    {selectedEvent.status === "rejected" && (
-                      <div
-                        style={{
-                          padding: "12px",
-                          borderRadius: "8px",
-                          background: "rgba(255, 152, 0, 0.15)",
-                          color: "#ffcc80",
-                          textAlign: "center",
-                          fontWeight: "600",
-                        }}
-                      >
-                        <i className="fas fa-ban"></i> Срабатывание отклонено
+                  <div className="defect-info-panel">
+                    <div className="detail-section decision-section">
+                      <h4>Решение инженера</h4>
+
+                      <div className="decision-status-card">
+                        <span>Текущий статус</span>
+                        <strong>{getStatusText(selectedEvent.status)}</strong>
                       </div>
-                    )}
+
+                      {selectedEvent.status === "pending" && (
+                        <>
+                          <textarea
+                            className="engineer-comment-input"
+                            value={decisionComment}
+                            onChange={(e) => setDecisionComment(e.target.value)}
+                            placeholder="Введите комментарий инженера: например, 'Трещина подтверждена визуально'"
+                          />
+
+                          <div className="modal-actions">
+                            <button
+                              className="control-btn"
+                              onClick={() => confirmEvent(selectedEvent)}
+                            >
+                              <i className="fas fa-check-circle"></i>
+                              Подтвердить дефект
+                            </button>
+
+                            <button
+                              className="control-btn secondary"
+                              onClick={() => rejectEvent(selectedEvent)}
+                            >
+                              <i className="fas fa-times-circle"></i>
+                              Отклонить
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {selectedEvent.status === "confirmed" && (
+                        <>
+                          <p className="decision-note">
+                            Дефект подтверждён инженером. Можно передать информацию в MES.
+                          </p>
+
+                          <div className="modal-actions">
+                            <button
+                              className="control-btn"
+                              onClick={() => sendToMes(selectedEvent)}
+                            >
+                              <i className="fas fa-paper-plane"></i>
+                              Передать в MES
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {selectedEvent.status === "sent_to_mes" && (
+                        <div className="result-message success">
+                          <i className="fas fa-check-circle"></i>
+                          Дефект подтверждён и передан в MES
+                        </div>
+                      )}
+
+                      {selectedEvent.status === "rejected" && (
+                        <div className="result-message warning">
+                          <i className="fas fa-ban"></i>
+                          Срабатывание отклонено инженером
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="detail-section">
+                      <h4>AI-результат</h4>
+
+                      <div className="detail-row">
+                        <span>ID слитка</span>
+                        <strong>{selectedEvent.id}</strong>
+                      </div>
+
+                      <div className="detail-row">
+                        <span>Вердикт</span>
+                        <strong>{getModalVerdictText(selectedEvent)}</strong>
+                      </div>
+
+                      <div className="detail-row">
+                      <span>Уверенность</span>
+                      <strong className={getConfidenceTextClass(selectedEvent.confidence)}>
+                        {formatPercent(selectedEvent.confidence)}
+                      </strong>
+                    </div>
+
+                      <div className="detail-row">
+                        <span>Модель</span>
+                        <strong>
+                          {selectedEvent.aiModelName || selectedEvent.aiModelKey || "—"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <details className="detail-section collapsible-detail" >
+                      <summary>MES</summary>
+
+                      <div className="collapsible-detail-body">
+                        <div className="detail-row">
+                          <span>Статус</span>
+                          <strong>
+                            {selectedEvent.status === "sent_to_mes"
+                              ? "Передано в MES"
+                              : selectedEvent.mesStatus || "Не передано"}
+                          </strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Время передачи</span>
+                          <strong>
+                            {selectedEvent.sentToMesAt
+                              ? selectedEvent.sentToMesAt.replace("T", " ")
+                              : "—"}
+                          </strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Сообщение</span>
+                          <strong>{selectedEvent.mesMessage || "—"}</strong>
+                        </div>
+                      </div>
+                    </details>
+
+                    <details className="detail-section technical-details">
+                      <summary>Технические данные проверки</summary>
+
+                      <div className="technical-details-body">
+                        <div className="detail-row">
+                          <span>max_p_crack</span>
+                          <strong>{formatNumber(selectedEvent.maxPCrack)}</strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Threshold</span>
+                          <strong>{formatNumber(selectedEvent.threshold)}</strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Кадров в слитке</span>
+                          <strong>{selectedEvent.framesCount || "—"}</strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>BBOX</span>
+                          <strong>{selectedEvent.bboxCount || 0}</strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Тип модели</span>
+                          <strong>{selectedEvent.aiModelType || "—"}</strong>
+                        </div>
+
+                        <div className="detail-row">
+                          <span>Архитектура</span>
+                          <strong>{selectedEvent.aiModelArchitecture || "—"}</strong>
+                        </div>
+                      </div>
+                    </details>
+
+                    <div className="detail-section">
+                      <h4>Комментарий</h4>
+                      <p className="defect-comment">
+                        {selectedEvent.comment || "Комментарий пока отсутствует"}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+          {mesConfirmModal.isOpen && (
+            <div className="mes-confirm-overlay" onClick={closeMesConfirmModal}>
+              <div
+                className="mes-confirm-modal"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="mes-confirm-header">
+                
+
+                  <div>
+                    <h3>Передать дефект в MES?</h3>
+                    <p>
+                      Информация о подтверждённом дефекте будет передана во внешнюю
+                      MES-систему. После передачи событие получит статус «Передано в MES».
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mes-confirm-info">
+                  <div className="mes-confirm-row">
+                    <span>ID слитка</span>
+                    <strong>{mesConfirmModal.event?.id || "—"}</strong>
+                  </div>
+
+                  <div className="mes-confirm-row">
+                    <span>Модель</span>
+                    <strong>
+                      {mesConfirmModal.event?.aiModelName ||
+                        mesConfirmModal.event?.aiModelKey ||
+                        "—"}
+                    </strong>
+                  </div>
+
+                  <div className="mes-confirm-row">
+                    <span>Уверенность</span>
+                    <strong>{formatPercent(mesConfirmModal.event?.confidence)}</strong>
+                  </div>
+
+                  <div className="mes-confirm-row">
+                    <span>Статус</span>
+                    <strong>{getStatusText(mesConfirmModal.event?.status)}</strong>
+                  </div>
+                </div>
+
+                <div className="mes-confirm-actions">
+                  <button
+                    type="button"
+                    className="mes-confirm-btn secondary"
+                    onClick={closeMesConfirmModal}
+                    disabled={mesConfirmModal.isSubmitting}
+                  >
+                    Отмена
+                  </button>
+
+                  <button
+                    type="button"
+                    className="mes-confirm-btn primary"
+                    onClick={confirmSendToMes}
+                    disabled={mesConfirmModal.isSubmitting}
+                  >
+                    {mesConfirmModal.isSubmitting ? "Передача..." : "Передать в MES"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
       </div>
     </div>
   );

@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.core.security import get_current_user, require_permission
 from app.core.database import get_db
-from app.core.security import get_current_user, require_admin
+from app.core.security import  require_admin
 from app.models.user import User
 from app.models.ai_model import AiModel
-from app.schemas.ai_model import AiModelPublic, AiModelSettingsUpdate
+from app.schemas.ai_model import AiModelPublic, AiModelSettingsUpdate, AiModelCreate
 from app.services.ai_service import ai_service
 from pathlib import Path
 
@@ -39,7 +39,105 @@ def list_ai_models(
 
     return models
 
+@router.post("", response_model=AiModelPublic)
+def create_ai_model(
+    data: AiModelCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("ai_models.manage")),
+):
+    """
+    Создаёт новую запись об AI-модели в реестре.
 
+    В текущей версии файл весов не загружается через интерфейс.
+    Пользователь указывает путь к уже размещённому файлу весов.
+    """
+    existing = (
+        db.query(AiModel)
+        .filter(AiModel.model_key == data.model_key)
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"AI model with model_key '{data.model_key}' already exists",
+        )
+
+    allowed_types = {"classification", "detection"}
+    if data.model_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model_type. Allowed: {sorted(allowed_types)}",
+        )
+
+    allowed_statuses = {"available", "experimental", "planned", "disabled", "error"}
+    if data.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Allowed: {sorted(allowed_statuses)}",
+        )
+
+    if data.threshold is not None:
+        if not 0 <= float(data.threshold) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="threshold must be in range 0..1",
+            )
+
+    if data.confidence_threshold is not None:
+        if not 0 <= float(data.confidence_threshold) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="confidence_threshold must be in range 0..1",
+            )
+
+    if data.iou_threshold is not None:
+        if not 0 <= float(data.iou_threshold) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="iou_threshold must be in range 0..1",
+            )
+
+    # Для моделей, которые можно будет активировать, сразу проверяем файл весов.
+    # Для planned/disabled/error можно оставить запись без реального файла.
+    if data.status in {"available", "experimental"}:
+        if not data.weights_path:
+            raise HTTPException(
+                status_code=400,
+                detail="weights_path is required for available or experimental model",
+            )
+
+        weights_path = resolve_model_weights_path(data.weights_path)
+
+        if not weights_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model weights file not found: {weights_path}",
+            )
+
+    model = AiModel(
+        model_key=data.model_key,
+        name=data.name,
+        model_type=data.model_type,
+        architecture=data.architecture,
+        weights_path=data.weights_path,
+        classes=data.classes,
+        status=data.status,
+        is_active=False,
+        default_mode=data.default_mode,
+        threshold=data.threshold,
+        confidence_threshold=data.confidence_threshold,
+        iou_threshold=data.iou_threshold,
+        modes=data.modes,
+        metrics=data.metrics,
+        description=data.description,
+    )
+
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+
+    return model
 @router.get("/active", response_model=AiModelPublic)
 def get_active_ai_model(
     db: Session = Depends(get_db),
@@ -144,11 +242,19 @@ def update_ai_model_settings(
                 status_code=400,
                 detail=f"Invalid status. Allowed: {sorted(allowed_statuses)}"
             )
-        model.status = data.status
 
-        # Если модель отключили, она не должна оставаться активной
-        if data.status in {"planned", "disabled", "error"}:
-            model.is_active = False
+        inactive_statuses = {"planned", "disabled", "error"}
+
+        if model.is_active and data.status in inactive_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Active model cannot be moved to planned, disabled or error. "
+                    "Activate another model first."
+                ),
+            )
+
+        model.status = data.status
 
     if data.default_mode is not None:
         if model.modes and data.default_mode not in model.modes:

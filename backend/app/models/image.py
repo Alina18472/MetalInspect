@@ -3,7 +3,8 @@ from sqlalchemy import (
     Integer,
     String,
     DateTime,
-    ForeignKey
+    ForeignKey,
+    BigInteger
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -14,8 +15,19 @@ class Image(Base):
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True)
+    
+    # legacy-поле: раньше здесь был локальный путь.
+    # Теперь можно хранить object_key, но поле пока оставляем для совместимости.
+    file_path = Column(String, nullable=True)
 
-    file_path = Column(String, nullable=False)
+    # local / s3
+    storage_type = Column(String(50), nullable=False, default="local", server_default="local")
+
+    # MinIO / S3 metadata
+    bucket = Column(String(255), nullable=True)
+    object_key = Column(String, nullable=True)
+    content_type = Column(String(100), nullable=True)
+    size_bytes = Column(BigInteger, nullable=True)
 
     # best_frame / gradcam / source
     image_type = Column(String(50), default="best_frame")

@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '340c37cdeb33'
@@ -19,21 +19,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    op.add_column(
-        "defects",
-        sa.Column("bbox", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column(
-        "defects",
-        sa.Column("detections", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column(
-        "defects",
-        sa.Column("bbox_count", sa.Integer(), nullable=True),
-    )
-
+    op.execute("ALTER TABLE defects ADD COLUMN IF NOT EXISTS bbox JSONB")
+    op.execute("ALTER TABLE defects ADD COLUMN IF NOT EXISTS detections JSONB")
+    op.execute("ALTER TABLE defects ADD COLUMN IF NOT EXISTS bbox_count INTEGER DEFAULT 0")
 
 def downgrade():
-    op.drop_column("defects", "bbox_count")
-    op.drop_column("defects", "detections")
-    op.drop_column("defects", "bbox")
+    op.execute("ALTER TABLE defects DROP COLUMN IF EXISTS bbox_count")
+    op.execute("ALTER TABLE defects DROP COLUMN IF EXISTS detections")
+    op.execute("ALTER TABLE defects DROP COLUMN IF EXISTS bbox")

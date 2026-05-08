@@ -22,7 +22,8 @@ from pathlib import Path
 from urllib.parse import quote
 from app.models.shift import Shift
 
-
+from app.services.storage_service import storage_service
+from app.core.config import settings
 def stream_image_path_to_url(file_path: str | None) -> str | None:
         if not file_path:
             return None
@@ -675,12 +676,30 @@ def save_one_ingot_result_to_db(
         db.flush()
 
         if result.get("best_frame_saved"):
+            best_frame_path = Path(result["best_frame_saved"])
+
+            object_key = storage_service.upload_file(
+                local_file_path=best_frame_path,
+                object_prefix=f"best_frames/{result['ingot_id']}",
+                content_type="image/jpeg",
+            )
+
             image = InspectionImage(
-                file_path=result["best_frame_saved"],
+                # В file_path больше не сохраняем Windows-путь.
+                # Временно дублируем object_key для совместимости со старым кодом.
+                file_path=object_key,
+
+                storage_type="s3",
+                bucket=settings.S3_BUCKET,
+                object_key=object_key,
+                content_type="image/jpeg",
+                size_bytes=best_frame_path.stat().st_size if best_frame_path.exists() else None,
+
                 image_type="best_frame",
                 inspection_id=inspection.id,
                 defect_id=defect.id,
             )
+
             db.add(image)
 
     db.commit()

@@ -59,7 +59,7 @@ export default function TopNav({ subtitle, userName, userRole }) {
         </NavLink> */}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="topnav-actions">
         <div
           className="user-info user-info-clickable"
           onClick={() => navigate(accountPath)}
