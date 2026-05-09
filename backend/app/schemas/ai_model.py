@@ -9,18 +9,14 @@ class AiModelPublic(BaseModel):
     name: str
     model_type: str
     architecture: str
-
     weights_path: Optional[str] = None
     classes: Optional[list[str]] = None
-
     is_active: bool
     status: str
-
     default_mode: Optional[str] = None
     threshold: Optional[float] = None
     confidence_threshold: Optional[float] = None
     iou_threshold: Optional[float] = None
-
     modes: Optional[dict[str, Any]] = None
     metrics: Optional[dict[str, Any]] = None
     description: Optional[str] = None

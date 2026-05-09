@@ -30,29 +30,16 @@ class Defect(Base):
     bbox = Column(JSONB, nullable=True)
     detections = Column(JSONB, nullable=True)
     bbox_count = Column(Integer, default=0)
-
-    # Старое поле можно оставить
     is_confirmed = Column(Boolean, default=False)
-
-    # Новый нормальный статус для журнала
-    status = Column(String(50), default="pending")  # pending / confirmed / rejected / sent_to_mes
-
+    status = Column(String(50), default="pending")  
     confirmed_by = Column(Integer, ForeignKey("users.id"))
     confirmed_at = Column(DateTime)
-
     comment = Column(Text)
     sent_to_mes_at = Column(DateTime, nullable=True)
-    mes_status = Column(String(50), nullable=True)  # not_sent / sent / error
+    mes_status = Column(String(50), nullable=True)  
     mes_message = Column(Text, nullable=True)
-    
-    
-  
-    
-
     created_at = Column(DateTime, server_default=func.now())
-
     inspection = relationship("Inspection", back_populates="defects")
-
     images = relationship(
         "Image",
         back_populates="defect",

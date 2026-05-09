@@ -1,4 +1,3 @@
-//App.js
 import { Routes, Route, Navigate } from "react-router-dom";
 import Auth from "./components/Auth";
 import Dashboard from "./components/DashboardPage";
@@ -9,6 +8,7 @@ import Settings from "./components/SettingsPage";
 import Stats from "./components/StatisticPage";
 import AdminAccount from "./components/AdminAccountPage";
 import RoleRoute from "./components/RoleRoute";
+import PermissionRoute from "./components/PermissionRoute";
 
 export default function App() {
   return (
@@ -18,36 +18,36 @@ export default function App() {
       <Route
         path="/dashboard"
         element={
-          <RoleRoute allow={[1, 2]}>
+          <PermissionRoute permission="dashboard.view">
             <Dashboard />
-          </RoleRoute>
+          </PermissionRoute>
         }
       />
 
       <Route
         path="/journal"
         element={
-          <RoleRoute allow={[1, 2]}>
+          <PermissionRoute permission="journal.view">
             <Journal />
-          </RoleRoute>
+          </PermissionRoute>
         }
       />
 
       <Route
         path="/ai-panel"
         element={
-          <RoleRoute allow={[1, 2]}>
+          <PermissionRoute permission="ai_models.view">
             <AiPanel />
-          </RoleRoute>
+          </PermissionRoute>
         }
       />
 
       <Route
         path="/stats"
         element={
-          <RoleRoute allow={[1, 2]}>
+          <PermissionRoute permission="stats.view">
             <Stats />
-          </RoleRoute>
+          </PermissionRoute>
         }
       />
 

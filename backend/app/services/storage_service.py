@@ -1,4 +1,3 @@
-# app/services/storage_service.py
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4

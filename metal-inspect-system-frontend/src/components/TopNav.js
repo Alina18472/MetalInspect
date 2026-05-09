@@ -1,15 +1,13 @@
-
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import "../styles/topnav.css";
 import { useAuth } from "../context/AuthContext";
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+
 
 export default function TopNav({ subtitle, userName, userRole }) {
   const navigate = useNavigate();
-  const { roleId, logout } = useAuth();
-  const { user } = useAuth();
+  const { roleId, logout, user, hasPermission } = useAuth();
 
   const computedName = useMemo(() => {
     if (user?.last_name || user?.first_name) {
@@ -42,21 +40,29 @@ export default function TopNav({ subtitle, userName, userRole }) {
       </div>
 
       <div className="nav-buttons">
-        <NavLink to="/dashboard" className={linkClass}>
-          <i className="fas fa-tachometer-alt"></i> Главный экран
-        </NavLink>
-        <NavLink to="/journal" className={linkClass}>
-          <i className="fas fa-history"></i> Журнал событий
-        </NavLink>
-        <NavLink to="/ai-panel" className={linkClass}>
-          <i className="fas fa-robot"></i> ИИ панель
-        </NavLink>
-        <NavLink to="/stats" className={linkClass}>
-          <i className="fas fa-chart-bar"></i> Статистика
-        </NavLink>
-        {/* <NavLink to="/settings" className={linkClass}>
-          <i className="fas fa-sliders-h"></i> Настройки
-        </NavLink> */}
+        {hasPermission("dashboard.view") && (
+          <NavLink to="/dashboard" className={linkClass}>
+            Главный экран
+          </NavLink>
+        )}
+
+        {hasPermission("journal.view") && (
+          <NavLink to="/journal" className={linkClass}>
+           Журнал событий
+          </NavLink>
+        )}
+
+        {hasPermission("ai_models.view") && (
+          <NavLink to="/ai-panel" className={linkClass}>
+             ИИ панель
+          </NavLink>
+        )}
+
+        {hasPermission("stats.full_view") && (
+          <NavLink to="/stats" className={linkClass}>
+            Статистика
+          </NavLink>
+        )}
       </div>
 
       <div className="topnav-actions">
@@ -80,7 +86,7 @@ export default function TopNav({ subtitle, userName, userRole }) {
         </div>
 
         <button className="nav-btn" onClick={handleLogout} title="Выйти">
-          <i className="fas fa-sign-out-alt"></i> Выйти
+          Выйти
         </button>
       </div>
     </div>

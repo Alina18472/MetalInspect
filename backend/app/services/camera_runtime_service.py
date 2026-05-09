@@ -37,12 +37,6 @@ def sort_stream_files(files: list[str]) -> list[str]:
 
 
 class CameraRuntimeService:
-    """
-    Эмулятор камеры.
-
-    Он постоянно крутит изображения из stream_images по кругу.
-    Frontend может читать /ai/camera/status и показывать текущий кадр.
-    """
 
     def __init__(self):
         self._lock = threading.Lock()

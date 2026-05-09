@@ -17,7 +17,7 @@ def main():
             email=EMAIL,
             hashed_password=hash_password(PASSWORD),
             is_active=True,
-            role_id=1,  # если у тебя роль admin = 1 (иначе поставь существующую)
+            role_id=1,  
         )
         db.add(new_user)
         db.commit()

@@ -1,19 +1,54 @@
-
-// src/components/Auth.js
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/auth.css";
 import { useAuth } from "../context/AuthContext";
 
+const EyeIcon = ({ isVisible }) => {
+  return (
+    <svg
+      className="password-eye-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M2.4 12C4.2 7.8 7.7 5.5 12 5.5C16.3 5.5 19.8 7.8 21.6 12C19.8 16.2 16.3 18.5 12 18.5C7.7 18.5 4.2 16.2 2.4 12Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      <circle
+        cx="12"
+        cy="12"
+        r="3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+
+      {isVisible && (
+        <path
+          d="M4 20L20 4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
+};
+
 const Auth = () => {
-  const [email, setEmail] = useState(""); // логин = email
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const navigate = useNavigate();
-
-  // ✅ берем из контекста
   const { login, isLoading } = useAuth();
 
   useEffect(() => {
@@ -32,16 +67,8 @@ const Auth = () => {
       return;
     }
 
-    // ✅ редирект по роли: admin(1) -> /admin/account, engineer(2) -> /account
-    const role = Number(result.role_id) || Number(localStorage.getItem("role_id")) || 0;
-
-   
     navigate("/dashboard", { replace: true });
-   
-    
   };
-
-  const togglePasswordVisibility = () => setShowPassword((v) => !v);
 
   return (
     <div className="login-container">
@@ -56,18 +83,13 @@ const Auth = () => {
         <form onSubmit={handleSubmit} id="loginForm">
           {error && (
             <div className="error-message">
-              <i className="fas fa-exclamation-triangle"></i>
               <span>{error}</span>
             </div>
           )}
 
           <div className="input-group">
-            <label htmlFor="email">
-              <i className="fas fa-user"></i> Логин
-            </label>
-            <div className="input-icon">
-              <i className="fas fa-user"></i>
-            </div>
+            <label htmlFor="email">Логин</label>
+
             <input
               type="email"
               id="email"
@@ -82,12 +104,8 @@ const Auth = () => {
           </div>
 
           <div className="input-group">
-            <label htmlFor="password">
-              <i className="fas fa-lock"></i> Пароль
-            </label>
-            <div className="input-icon">
-              <i className="fas fa-lock"></i>
-            </div>
+            <label htmlFor="password">Пароль</label>
+
             <input
               type={showPassword ? "text" : "password"}
               id="password"
@@ -99,15 +117,17 @@ const Auth = () => {
               disabled={isLoading}
               autoComplete="current-password"
             />
-            <div
+
+            <button
+              type="button"
               className="password-toggle"
-              id="togglePassword"
-              onClick={togglePasswordVisibility}
-              style={{ cursor: "pointer" }}
-              aria-label="toggle password"
+              onClick={() => setShowPassword((prev) => !prev)}
+              disabled={isLoading}
+              aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+              title={showPassword ? "Скрыть пароль" : "Показать пароль"}
             >
-              <i className={`fas fa-eye${showPassword ? "-slash" : ""}`}></i>
-            </div>
+              <EyeIcon isVisible={showPassword} />
+            </button>
           </div>
 
           <button
@@ -115,23 +135,19 @@ const Auth = () => {
             className={`login-btn ${isLoading ? "loading" : ""}`}
             disabled={isLoading}
           >
-            {isLoading ? (
-              <>
-                <i className="fas fa-spinner fa-spin"></i> Проверка данных...
-              </>
-            ) : (
-              "Войти в систему"
-            )}
+            {isLoading ? "Проверка данных..." : "Войти в систему"}
           </button>
         </form>
       </div>
 
       <div className="footer">
-        <p style={{ marginTop: "15px" }}>
-          Для доступа к системе требуется авторизация.<br />
+        <p>
+          Для доступа к системе требуется авторизация.
+          <br />
           Обратитесь к администратору для получения учетных данных.
         </p>
-        <p style={{ marginTop: "10px", fontSize: "0.8rem" }}>© 2026 Metal Inspect.</p>
+
+        <p className="auth-copyright">© 2026 Metal Inspect.</p>
       </div>
     </div>
   );

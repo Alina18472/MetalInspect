@@ -89,8 +89,6 @@ def update_role_permissions(
             detail=f"Unknown permissions: {', '.join(sorted(unknown_codes))}",
         )
 
-    # Защита от случайной потери доступа:
-    # у роли администратора всегда должны оставаться users.manage и roles.manage.
     if role_id == 1:
         required_admin_codes = {"users.manage", "roles.manage"}
         if not required_admin_codes.issubset(requested_codes):
@@ -133,5 +131,8 @@ def get_my_permissions(
     return {
         "user_id": current_user.id,
         "role_id": current_user.role_id,
+
         "permissions": [p.code for p in rows],
+
+        "permission_details": [permission_to_dict(p) for p in rows],
     }

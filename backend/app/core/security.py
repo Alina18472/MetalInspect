@@ -1,5 +1,3 @@
-
-# app/core/security.py
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -46,21 +44,13 @@ def create_access_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-# ---- NEW: dependencies for protected endpoints ----
-
-
-
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def get_user_from_token(db: Session, token: str) -> User:
     payload = decode_token(token)
 
     sub = payload.get("sub")
@@ -73,6 +63,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token subject")
 
     user = db.query(User).filter(User.id == user_id).first()
+
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
@@ -80,6 +71,14 @@ def get_current_user(
         raise HTTPException(status_code=403, detail="User is inactive")
 
     return user
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return get_user_from_token(db, token)
+
+
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if int(current_user.role_id) != 1:
         raise HTTPException(status_code=403, detail="Forbidden")

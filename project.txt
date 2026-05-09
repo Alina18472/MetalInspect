@@ -257,6 +257,7 @@ Metal_Inspect_0/
 │   │   │   ├── auth.py                 # API авторизации и аутентификации
 │   │   │   ├── dashboard.py            # API для панели мониторинга
 │   │   │   ├── journal.py              # API журнала проверок и дефектов
+│   │   │   ├── permissions.py          # API для работы с правами доступа
 │   │   │   ├── stats.py                # API статистики
 │   │   │   ├── users.py                # API управления пользователями
 │   │   │   └── ws.py                   # WebSocket API для обновлений в реальном времени
@@ -273,6 +274,8 @@ Metal_Inspect_0/
 │   │   │   ├── defect.py               # Модель дефекта
 │   │   │   ├── image.py                # Модель изображения / сохраненного кадра
 │   │   │   ├── inspection.py           # Модель проверки слитка
+│   │   │   ├── permission.py           # Модель права доступа
+│   │   │   ├── role_permission.py      # Связь ролей и прав доступа
 │   │   │   ├── role.py                 # Модель роли пользователя
 │   │   │   ├── shift.py                # Модель производственной смены
 │   │   │   └── user.py                 # Модель пользователя
@@ -286,17 +289,25 @@ Metal_Inspect_0/
 │   │   │   ├── ai_service.py           # Сервис загрузки модели и анализа кадров
 │   │   │   ├── camera_runtime_service.py # Логика эмуляции потока кадров
 │   │   │   ├── shift_runtime_service.py  # Runtime-логика текущей смены
-│   │   │   └── shift_service.py        # Сервис работы со сменами
+│   │   │   ├── shift_service.py        # Сервис работы со сменами
+│   │   │   └── storage_service.py      # Сервис сохранения файлов локально / в объектное хранилище
 │   │   │
 │   │   └── main.py                     # Точка входа FastAPI-приложения
 │   │
 │   ├── media/                          # Сохраняемые изображения / кадры проверок
+│   │   ├── best_frames/                # Лучшие кадры с обнаруженными дефектами
+│   │   └── grad_cam/                   # Grad-CAM изображения для визуализации работы модели
+│   │
 │   ├── models_ml/                      # Файлы обученных ML-моделей
-│   │   └── best_weighted.pt            # Обученные веса модели ResNet18
+│   │   ├── best_weighted.pt            # Основные веса ResNet18
+│   │   ├── last_weighted.pt            # Последние сохраненные веса ResNet18
+│   │   └── yolo_crack_best.pt          # Веса YOLO-модели для детекции трещин
 │   │
 │   ├── scripts/                        # Вспомогательные скрипты backend
 │   │   ├── create_admin.py             # Скрипт создания администратора
-│   │   └── seed_ai_models.py           # Скрипт заполнения таблицы ИИ-моделей
+│   │   ├── register_yolo_model.py      # Скрипт регистрации YOLO-модели в БД
+│   │   ├── seed_ai_models.py           # Скрипт заполнения таблицы ИИ-моделей
+│   │   └── test_minio_upload.py        # Скрипт проверки загрузки файлов в MinIO / S3-хранилище
 │   │
 │   ├── stream_images/                  # Изображения для эмуляции видеопотока
 │   ├── alembic.ini                     # Конфигурация Alembic
@@ -316,51 +327,52 @@ Metal_Inspect_0/
 │   │   ├── components/                 # React-компоненты и страницы
 │   │   │   ├── AccountPage.js          # Страница аккаунта пользователя
 │   │   │   ├── AdminAccountPage.js     # Страница администратора
-│   │   │   ├── AiPanelPage.js          # Панель управления ИИ-анализом
+│   │   │   ├── AiPanelPage.js          # Панель управления ИИ-моделями
 │   │   │   ├── Auth.js                 # Страница авторизации
-│   │   │   ├── DashboardPage.js        # Панель мониторинга
+│   │   │   ├── DashboardPage.js        # Главная панель мониторинга
 │   │   │   ├── JournalPage.js          # Журнал проверок и дефектов
 │   │   │   ├── Layout.js               # Общий макет приложения
-│   │   │   ├── ProtectedRoute.js       # Защита маршрутов
+│   │   │   ├── ProtectedRoute.js       # Защита маршрутов для авторизованных пользователей
 │   │   │   ├── RoleRoute.js            # Ограничение доступа по ролям
 │   │   │   ├── SettingsPage.js         # Страница настроек
 │   │   │   ├── StatisticPage.js        # Страница статистики
 │   │   │   └── TopNav.js               # Верхняя навигационная панель
 │   │   │
 │   │   ├── context/                    # React Context
-│   │   │   └── AuthContext.js          # Контекст авторизации
+│   │   │   └── AuthContext.js          # Контекст авторизации и текущего пользователя
 │   │   │
 │   │   ├── other/                      # Дополнительные frontend-файлы
 │   │   │
 │   │   ├── services/                   # Сервисы для обращения к backend
-│   │   │   └── Api.js                  # Настройка API-запросов
+│   │   │   └── Api.js                  # Методы REST API и базовая настройка запросов
 │   │   │
 │   │   ├── styles/                     # CSS-стили страниц и компонентов
+│   │   │   ├── account.css             # Стили страницы аккаунта
+│   │   │   ├── admin_account.css       # Стили страницы администратора
+│   │   │   ├── ai_panel.css            # Стили панели ИИ-моделей
 │   │   │   ├── auth.css                # Стили страницы авторизации
-│   │   │   ├── dashboard.css           # Стили панели мониторинга
+│   │   │   ├── dashboard.css           # Стили главной панели мониторинга
 │   │   │   ├── journal.css             # Стили журнала
-│   │   │   ├── ai_panel.css            # Стили панели ИИ
-│   │   │   ├── account.css             # Стили аккаунта
-│   │   │   ├── statistic.css           # Стили статистики
-│   │   │   └── settings.css            # Стили настроек
+│   │   │   ├── settings.css            # Стили настроек
+│   │   │   ├── statistic.css           # Стили страницы статистики
+│   │   │   └── topnav.css              # Стили верхней навигационной панели
 │   │   │
-│   │   ├── App.css                     # Общие стили приложения
+│   │   ├── App.css                     # Общие стили React-приложения
 │   │   ├── App.js                      # Основной компонент React-приложения
 │   │   ├── App.test.js                 # Тестовый файл React
 │   │   ├── index.css                   # Глобальные стили
 │   │   ├── index.js                    # Точка входа React
-│   │   ├── logo.svg
-│   │   ├── reportWebVitals.js
-│   │   └── setupTests.js
+│   │   ├── logo.svg                    # Логотип React
+│   │   ├── reportWebVitals.js          # Измерение web-vitals
+│   │   └── setupTests.js               # Настройка тестового окружения
 │   │
 │   ├── .env                            # Переменные окружения frontend
 │   ├── package.json                    # npm-зависимости и команды запуска
 │   ├── package-lock.json               # Зафиксированные версии npm-пакетов
-│   └── README.md
+│   └── README.md                       # Описание frontend-проекта
 │
-├── docker-compose.yml                  # Конфигурация Docker для PostgreSQL
+├── docker-compose.yml                  # Конфигурация Docker, например PostgreSQL / pgAdmin / MinIO
 ├── project.txt                         # Дополнительные заметки / описание проекта
 └── .gitignore                          # Исключения для Git
-
 
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

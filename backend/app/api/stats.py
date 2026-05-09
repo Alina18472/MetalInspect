@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+
 from app.models.user import User
 from app.models.shift import Shift
 from app.models.inspection import Inspection
 from app.models.defect import Defect
 from app.services.shift_runtime_service import shift_runtime_service
-from app.core.security import get_current_user, require_permission
+from app.core.security import require_permission
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -20,12 +20,14 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 def date_start(value: Optional[date]):
     if value is None:
         return None
+
     return datetime.combine(value, time.min)
 
 
 def date_end_exclusive(value: Optional[date]):
     if value is None:
         return None
+
     return datetime.combine(value + timedelta(days=1), time.min)
 
 
@@ -52,6 +54,42 @@ def get_filtered_shifts(
     return query.order_by(Shift.id.desc()).all()
 
 
+def calculate_engineer_metrics(
+    all_defects_count: int,
+    confirmed_count: int,
+    rejected_count: int,
+    sent_to_mes_count: int,
+) -> dict:
+    engineer_confirmed_count = confirmed_count + sent_to_mes_count
+    engineer_reviewed_count = confirmed_count + rejected_count + sent_to_mes_count
+
+    false_alarm_rate = (
+        rejected_count / all_defects_count * 100.0
+        if all_defects_count
+        else 0.0
+    )
+
+    false_alarm_rate_reviewed = (
+        rejected_count / engineer_reviewed_count * 100.0
+        if engineer_reviewed_count
+        else 0.0
+    )
+
+    engineer_confirmation_rate = (
+        engineer_confirmed_count / engineer_reviewed_count * 100.0
+        if engineer_reviewed_count
+        else 0.0
+    )
+
+    return {
+        "engineer_confirmed_count": engineer_confirmed_count,
+        "engineer_reviewed_count": engineer_reviewed_count,
+        "false_alarm_rate": false_alarm_rate,
+        "false_alarm_rate_reviewed": false_alarm_rate_reviewed,
+        "engineer_confirmation_rate": engineer_confirmation_rate,
+    }
+
+
 def shift_to_dict(
     shift: Shift,
     db: Session,
@@ -64,13 +102,14 @@ def shift_to_dict(
     )
 
     processed = len(inspections)
-    total_crack = sum(1 for i in inspections if i.has_defect)
-    total_ok = processed - total_crack
+
+    ai_crack_count = sum(1 for i in inspections if i.has_defect)
+    ai_ok_count = processed - ai_crack_count
 
     sum_max_p = sum(float(i.max_p_crack or 0) for i in inspections)
     sum_frames = sum(int(i.frames_count or 0) for i in inspections)
 
-    defect_rate = (total_crack / processed * 100.0) if processed else 0.0
+    ai_defect_rate = (ai_crack_count / processed * 100.0) if processed else 0.0
     avg_max_p = (sum_max_p / processed) if processed else 0.0
     avg_frames = (sum_frames / processed) if processed else 0.0
 
@@ -92,6 +131,13 @@ def shift_to_dict(
     rejected = sum(1 for d in all_defects if d.status == "rejected")
     sent_to_mes = sum(1 for d in all_defects if d.status == "sent_to_mes")
 
+    engineer_metrics = calculate_engineer_metrics(
+        all_defects_count=len(all_defects),
+        confirmed_count=confirmed,
+        rejected_count=rejected,
+        sent_to_mes_count=sent_to_mes,
+    )
+
     return {
         "shift_id": shift.id,
         "status": shift.status,
@@ -101,11 +147,10 @@ def shift_to_dict(
         "mode": shift.mode,
         "threshold": float(shift.threshold or 0),
         "started_by": shift.started_by,
-
         "processed_ingots": processed,
-        "total_crack": total_crack,
-        "total_ok": total_ok,
-        "defect_rate": defect_rate,
+        "total_crack": ai_crack_count,
+        "total_ok": ai_ok_count,
+        "defect_rate": ai_defect_rate,
         "avg_max_p_crack": avg_max_p,
         "avg_frames": avg_frames,
 
@@ -114,6 +159,31 @@ def shift_to_dict(
         "defects_confirmed": confirmed,
         "defects_rejected": rejected,
         "defects_sent_to_mes": sent_to_mes,
+
+        "false_alarm_rate": engineer_metrics["false_alarm_rate"],
+
+        "ai_checked_count": processed,
+        "ai_ok_count": ai_ok_count,
+        "ai_crack_count": ai_crack_count,
+        "ai_defect_rate": ai_defect_rate,
+
+        "defect_events_total": len(all_defects),
+        "defect_events_filtered": len(filtered_defects),
+
+        "engineer_pending_count": pending,
+        "engineer_confirmed_status_count": confirmed,
+        "engineer_rejected_count": rejected,
+        "engineer_sent_to_mes_count": sent_to_mes,
+
+        "engineer_confirmed_count": engineer_metrics["engineer_confirmed_count"],
+
+        "engineer_reviewed_count": engineer_metrics["engineer_reviewed_count"],
+
+        "false_alarm_rate_all": engineer_metrics["false_alarm_rate"],
+
+        "false_alarm_rate_reviewed": engineer_metrics["false_alarm_rate_reviewed"],
+
+        "engineer_confirmation_rate": engineer_metrics["engineer_confirmation_rate"],
 
         "error_message": shift.error_message,
     }
@@ -157,7 +227,7 @@ def get_stats_summary(
     shift_id: Optional[int] = Query(default=None),
     defect_status: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("stats.view")),
+    current_user: User = Depends(require_permission("stats.full_view")),
 ):
     shifts = get_filtered_shifts(
         db=db,
@@ -176,29 +246,52 @@ def get_stats_summary(
             "crack_count": 0,
             "defects_count": 0,
             "defect_rate": 0.0,
-            "avg_max_p_crack": 0.0,
-            "avg_frames": 0.0,
+          
             "defects_pending": 0,
             "defects_confirmed": 0,
             "defects_rejected": 0,
             "defects_sent_to_mes": 0,
             "false_alarm_rate": 0.0,
+            "avg_max_p_crack_ai_defects": 0.0,
+            "avg_max_p_crack_confirmed_defects": 0.0,
+
+            "ai_checked_count": 0,
+            "ai_ok_count": 0,
+            "ai_crack_count": 0,
+            "ai_defect_rate": 0.0,
+
+            "defect_events_total": 0,
+            "defect_events_filtered": 0,
+
+            "engineer_pending_count": 0,
+            "engineer_confirmed_status_count": 0,
+            "engineer_rejected_count": 0,
+            "engineer_sent_to_mes_count": 0,
+            "engineer_confirmed_count": 0,
+            "engineer_reviewed_count": 0,
+            "false_alarm_rate_all": 0.0,
+            "false_alarm_rate_reviewed": 0.0,
+            "engineer_confirmation_rate": 0.0,
         }
 
     inspections_query = db.query(Inspection).filter(Inspection.shift_id.in_(shift_ids))
 
     inspections_count = inspections_query.count()
 
-    crack_count = (
+    ai_crack_count = (
         inspections_query
         .filter(Inspection.has_defect == True)
         .count()
     )
 
-    ok_count = inspections_count - crack_count
+    ai_ok_count = inspections_count - ai_crack_count
 
-    avg_max_p = inspections_query.with_entities(func.avg(Inspection.max_p_crack)).scalar()
-    avg_frames = inspections_query.with_entities(func.avg(Inspection.frames_count)).scalar()
+    avg_ai_defect_max_p = (
+        inspections_query
+        .filter(Inspection.has_defect == True)
+        .with_entities(func.avg(Inspection.max_p_crack))
+        .scalar()
+    )
 
     defects_base_query = (
         db.query(Defect)
@@ -209,60 +302,117 @@ def get_stats_summary(
     all_defects_count = defects_base_query.count()
 
     if defect_status:
-        defects_count = defects_base_query.filter(Defect.status == defect_status).count()
+        filtered_defects_count = (
+            defects_base_query
+            .filter(Defect.status == defect_status)
+            .count()
+        )
     else:
-        defects_count = all_defects_count
+        filtered_defects_count = all_defects_count
 
     pending_count = defects_base_query.filter(Defect.status == "pending").count()
     confirmed_count = defects_base_query.filter(Defect.status == "confirmed").count()
     rejected_count = defects_base_query.filter(Defect.status == "rejected").count()
     sent_to_mes_count = defects_base_query.filter(Defect.status == "sent_to_mes").count()
+    avg_confirmed_defect_max_p = (
+        defects_base_query
+        .filter(Defect.status.in_(["confirmed", "sent_to_mes"]))
+        .with_entities(func.avg(Inspection.max_p_crack))
+        .scalar()
+    )
 
-    defect_rate = (crack_count / inspections_count * 100.0) if inspections_count else 0.0
-    false_alarm_rate = (rejected_count / all_defects_count * 100.0) if all_defects_count else 0.0
+    ai_defect_rate = (
+        ai_crack_count / inspections_count * 100.0
+        if inspections_count
+        else 0.0
+    )
+
+    engineer_metrics = calculate_engineer_metrics(
+        all_defects_count=all_defects_count,
+        confirmed_count=confirmed_count,
+        rejected_count=rejected_count,
+        sent_to_mes_count=sent_to_mes_count,
+    )
 
     return {
         "shifts_count": len(shifts),
         "inspections_count": inspections_count,
-        "ok_count": ok_count,
-        "crack_count": crack_count,
-        "defects_count": defects_count,
+        "ok_count": ai_ok_count,
+        "crack_count": ai_crack_count,
+        "defects_count": filtered_defects_count,
 
-        "defect_rate": defect_rate,
-        "avg_max_p_crack": float(avg_max_p or 0),
-        "avg_frames": float(avg_frames or 0),
+        "defect_rate": ai_defect_rate,
+        "avg_max_p_crack_ai_defects": float(avg_ai_defect_max_p or 0),
+        "avg_max_p_crack_confirmed_defects": float(avg_confirmed_defect_max_p or 0),
 
         "defects_pending": pending_count,
         "defects_confirmed": confirmed_count,
         "defects_rejected": rejected_count,
         "defects_sent_to_mes": sent_to_mes_count,
 
-        "false_alarm_rate": false_alarm_rate,
+        "false_alarm_rate": engineer_metrics["false_alarm_rate"],
+
+        "ai_checked_count": inspections_count,
+        "ai_ok_count": ai_ok_count,
+        "ai_crack_count": ai_crack_count,
+        "ai_defect_rate": ai_defect_rate,
+
+        "defect_events_total": all_defects_count,
+        "defect_events_filtered": filtered_defects_count,
+
+        "engineer_pending_count": pending_count,
+        "engineer_confirmed_status_count": confirmed_count,
+        "engineer_rejected_count": rejected_count,
+        "engineer_sent_to_mes_count": sent_to_mes_count,
+
+        "engineer_confirmed_count": engineer_metrics["engineer_confirmed_count"],
+        "engineer_reviewed_count": engineer_metrics["engineer_reviewed_count"],
+        "false_alarm_rate_all": engineer_metrics["false_alarm_rate"],
+        "false_alarm_rate_reviewed": engineer_metrics["false_alarm_rate_reviewed"],
+        "engineer_confirmation_rate": engineer_metrics["engineer_confirmation_rate"],
     }
 
 
 @router.get("/shifts")
 def get_shifts_stats(
-    limit: int = 20,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     shift_id: Optional[int] = Query(default=None),
     defect_status: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("stats.view")),
+    current_user: User = Depends(require_permission("stats.full_view")),
 ):
-    shifts = get_filtered_shifts(
+    all_shifts = get_filtered_shifts(
         db=db,
         date_from=date_from,
         date_to=date_to,
         shift_id=shift_id,
     )
 
-    shifts = shifts[:limit]
+    total = len(all_shifts)
+    total_pages = max((total + page_size - 1) // page_size, 1)
+
+    if page > total_pages:
+        page = total_pages
+
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    paginated_shifts = all_shifts[start:end]
 
     return {
-        "total": len(shifts),
-        "items": [shift_to_dict(s, db, defect_status=defect_status) for s in shifts],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+        "items": [
+            shift_to_dict(s, db, defect_status=defect_status)
+            for s in paginated_shifts
+        ],
     }
 
 
@@ -270,7 +420,7 @@ def get_shifts_stats(
 def get_shift_details(
     shift_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("stats.view")),
+    current_user: User = Depends(require_permission("stats.full_view")),
 ):
     shift = db.query(Shift).filter(Shift.id == shift_id).first()
 

@@ -1,4 +1,3 @@
-# app/api/auth.py 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
@@ -20,7 +19,7 @@ def get_db():
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     user = (
         db.query(User)
-        .options(joinedload(User.role))  # чтобы role подтянулась одним запросом
+        .options(joinedload(User.role))  
         .filter(User.email == data.email)
         .first()
     )
@@ -51,7 +50,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             "patronymic": user.patronymic,
             "phone": user.phone,
             "role_id": int(user.role_id),
-            "role_name": user.role.name if user.role else None,  # если в Role есть name
+            "role_name": user.role.name if user.role else None,  
         }
     }
 @router.post("/token")

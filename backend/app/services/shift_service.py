@@ -34,7 +34,6 @@ def list_images(root: str):
         files.extend(glob.glob(os.path.join(root, f"*{ext}")))
         files.extend(glob.glob(os.path.join(root, f"*{ext.upper()}")))
 
-        # На случай, если внутри stream_images есть подпапки
         files.extend(glob.glob(os.path.join(root, "**", f"*{ext}"), recursive=True))
         files.extend(glob.glob(os.path.join(root, "**", f"*{ext.upper()}"), recursive=True))
 
@@ -42,11 +41,6 @@ def list_images(root: str):
 
 
 def extract_ingot_id(filepath: str) -> str:
-    """
-    Пример:
-    ingot_001_01_crazing_92.jpg -> ingot_001
-    ingot_002_03_ok_15.jpg      -> ingot_002
-    """
     name = os.path.splitext(os.path.basename(filepath))[0]
     parts = name.split("_")
 
@@ -57,11 +51,7 @@ def extract_ingot_id(filepath: str) -> str:
 
 
 def extract_frame_index(filepath: str) -> int:
-    """
-    Пример:
-    ingot_001_01_crazing_92.jpg -> 1
-    ingot_001_04_crazing_95.jpg -> 4
-    """
+
     name = os.path.splitext(os.path.basename(filepath))[0]
     parts = name.split("_")
 

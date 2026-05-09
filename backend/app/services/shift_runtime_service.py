@@ -35,16 +35,7 @@ def stream_image_path_to_url(file_path: str | None) -> str | None:
             return None
         
 class ShiftRuntimeService:
-    """
-    Runtime-сервис для имитации смены в near-real-time режиме.
-
-    Логика:
-    - стартуем смену;
-    - обрабатываем слитки по одному;
-    - после каждого слитка сразу пишем результат в БД;
-    - frontend может периодически запрашивать статус и журнал.
-    """
-
+  
     def __init__(self):
         self._lock = threading.Lock()
         self._thread = None
@@ -116,11 +107,7 @@ class ShiftRuntimeService:
         threshold: Optional[float] = None,
         delay_sec: float = 0.7,
     ):
-        # if mode not in MODE_PRESETS:
-        #     raise ValueError(f"Unknown mode: {mode}")
-
-        # if threshold is None:
-        #     threshold = MODE_PRESETS[mode]["threshold"]
+    
         ai_service.ensure_model_loaded()
         active_model = ai_service.get_active_model_runtime_info()
 
@@ -524,14 +511,10 @@ def process_one_ingot(
     frames_count = 0
     max_p_crack = 0.0
     best_frame_src = None
-
-    # Для YOLO / detection-модели.
-    # Для ResNet эти значения останутся пустыми.
     best_bbox = None
     best_detections = []
     best_model_type = None
     effective_threshold = float(threshold or 0)
-
     total_frames = len(ingot_files)
     last_pred = None
     for frame_index, img_path in enumerate(ingot_files, start=1):
@@ -545,11 +528,7 @@ def process_one_ingot(
         last_pred = pred
 
         p_crack = float(pred.get("p_crack", 0))
-
-        # Для ResNet threshold приходит из аргумента.
-        # Для YOLO ai_service сможет вернуть свой threshold = confidence_threshold.
         effective_threshold = float(pred.get("threshold", threshold or 0))
-
         frame_verdict = pred.get("verdict") or (
             "CRACK" if p_crack >= effective_threshold else "OK"
         )
@@ -563,9 +542,6 @@ def process_one_ingot(
         if p_crack > max_p_crack:
             max_p_crack = p_crack
             best_frame_src = img_path
-
-            # Для YOLO сохраняем bbox и список detections с лучшего кадра.
-            # Для ResNet здесь будут None и [].
             best_bbox = bbox
             best_detections = detections
             best_model_type = model_type
@@ -611,8 +587,6 @@ def process_one_ingot(
         "model_name": last_pred.get("model_name") if last_pred else None,
         "model_type": best_model_type or (last_pred.get("model_type") if last_pred else None),
         "architecture": last_pred.get("architecture") if last_pred else None,
-
-        # Для YOLO / bbox
         "best_bbox": best_bbox,
         "best_detections": best_detections,
         "bbox_count": len(best_detections),
@@ -685,8 +659,6 @@ def save_one_ingot_result_to_db(
             )
 
             image = InspectionImage(
-                # В file_path больше не сохраняем Windows-путь.
-                # Временно дублируем object_key для совместимости со старым кодом.
                 file_path=object_key,
 
                 storage_type="s3",
@@ -709,7 +681,6 @@ def save_one_ingot_result_to_db(
         "defect_id": defect.id if defect else None,
         "image_id": image.id if image else None,
         "verdict": verdict,
-        # Для YOLO / bbox
         "bbox": defect.bbox if defect else None,
         "detections": defect.detections if defect else [],
         "bbox_count": defect.bbox_count if defect else 0,

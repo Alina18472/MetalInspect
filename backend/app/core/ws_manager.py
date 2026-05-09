@@ -34,9 +34,7 @@ class ShiftWebSocketManager:
             self.disconnect(connection)
 
     def broadcast_json(self, message: dict[str, Any]):
-        """
-        Можно вызывать из обычного sync-кода и из отдельного thread.
-        """
+      
         if not self.loop or self.loop.is_closed():
             return
 

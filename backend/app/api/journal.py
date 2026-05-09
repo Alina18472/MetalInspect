@@ -1,4 +1,3 @@
-
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Optional
@@ -478,8 +477,6 @@ def send_defect_to_mes(
             "message": "Дефект уже был передан в MES",
         }
 
-    # Имитация payload для MES.
-    # В реальной системе здесь был бы HTTP-запрос / Kafka-сообщение / интеграция с MES.
     mes_payload = {
         "defect_id": defect.id,
         "inspection_id": inspection.id,

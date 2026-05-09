@@ -1,912 +1,766 @@
-/* Обнуление и базовые стили для страницы статистики */
 .statistic-page {
-    background: linear-gradient(135deg, #0c1a2d 0%, #1a2b3c 50%, #0d2335 100%);
-    color: #e0e0e0;
-    min-height: 100vh;
-    padding: 20px;
-    position: relative;
-    overflow-x: hidden;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+  position: relative;
+  overflow-x: hidden;
+  color: #e6eef8;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #0c1a2d 0%, #15283c 50%, #0d2335 100%);
 }
 
 .statistic-page-bg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: 
-        radial-gradient(circle at 20% 30%, rgba(30, 90, 130, 0.15) 0%, transparent 20%),
-        radial-gradient(circle at 80% 70%, rgba(40, 100, 150, 0.1) 0%, transparent 20%);
-    z-index: 0;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 18% 24%, rgba(77, 171, 247, 0.14) 0%, transparent 24%),
+    radial-gradient(circle at 82% 72%, rgba(56, 189, 248, 0.1) 0%, transparent 22%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .statistic-container {
-    position: relative;
-    z-index: 1;
-    max-width: 1800px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
+  position: relative;
+  z-index: 1;
+  max-width: 1760px;
+  width: 100%;
+  margin: 0 auto;
 }
 
-/* Основное содержимое */
 .statistic-main-content {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 20px;
-    margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 18px;
 }
 
-/* Панель фильтров */
+
 .statistic-filters-panel {
-    background-color: rgba(18, 30, 44, 0.85);
-    border-radius: 12px;
-    box-shadow: 
-        0 10px 30px rgba(0, 0, 0, 0.5),
-        0 0 0 1px rgba(60, 120, 180, 0.2),
-        inset 0 0 20px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
-    backdrop-filter: blur(10px);
-    padding: 20px 25px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(13, 25, 40, 0.82);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(10px);
 }
 
 .statistic-filters-flex {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr)) minmax(220px, auto);
+  gap: 14px;
+  align-items: end;
 }
 
 .statistic-filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex: 1;
-    min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
 }
 
 .statistic-filter-label {
-    font-size: 0.9rem;
-    color: #b0c4de;
-    display: flex;
-    align-items: center;
-    font-weight: 500;
-}
-
-.statistic-filter-label i {
-    margin-right: 8px;
-    color: #4dabf7;
-    font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #aac4dd;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .statistic-filter-select {
-    width: 100%;
-    padding: 12px 15px;
-    background-color: rgba(30, 45, 65, 0.8);
-    border: 1px solid rgba(60, 120, 180, 0.3);
-    border-radius: 8px;
-    color: #e0e0e0;
-    font-size: 0.95rem;
-    transition: all 0.3s ease;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%238fb4d9' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 15px center;
-    background-size: 12px;
-    padding-right: 40px;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 13px;
+  color: #e6eef8;
+  background: rgba(24, 39, 58, 0.88);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 11px;
+  outline: none;
+  transition: 0.2s ease;
+  box-sizing: border-box;
 }
 
 .statistic-filter-select:focus {
-    outline: none;
-    border-color: #4dabf7;
-    box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.2);
-    background-color: rgba(35, 55, 80, 0.9);
+  border-color: rgba(77, 171, 247, 0.78);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.14);
 }
 
 .statistic-filter-buttons {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-    flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .statistic-filter-btn {
-    padding: 12px 20px;
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 0.95rem;
+  height: 42px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: 0.2s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.statistic-filter-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .statistic-filter-btn-primary {
-    background: linear-gradient(90deg, #1e5aa0 0%, #2a6bc0 100%);
-    color: white;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1d6ed0, #348ceb);
+  box-shadow: 0 10px 20px rgba(29, 110, 208, 0.28);
 }
 
-.statistic-filter-btn-primary:hover {
-    background: linear-gradient(90deg, #2a6bc0 0%, #3a7bd0 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(30, 90, 160, 0.4);
+.statistic-filter-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px rgba(29, 110, 208, 0.35);
 }
 
 .statistic-filter-btn-secondary {
-    background-color: rgba(60, 120, 180, 0.2);
-    border: 1px solid rgba(60, 120, 180, 0.4);
-    color: #b0c4de;
+  color: #c9dff4;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.22);
 }
 
-.statistic-filter-btn-secondary:hover {
-    background-color: rgba(60, 120, 180, 0.4);
-    color: #e0e0e0;
+.statistic-filter-btn-secondary:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.2);
 }
 
-/* Основная панель статистики */
-.statistic-stats-panel {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 40px; /* Добавляем отступ снизу для удобства прокрутки */
+.statistic-dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
-.statistic-main-stats {
-    flex: 3;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    min-width: 0;
+.statistic-section {
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(13, 25, 40, 0.82);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
 }
 
-.statistic-sidebar-stats {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    min-width: 300px;
+.statistic-section-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.18);
+  background: linear-gradient(90deg, rgba(26, 58, 95, 0.88), rgba(32, 72, 108, 0.72));
 }
 
-/* Общие стили для контейнеров статистики */
-.statistic-stats-container {
-    background-color: rgba(18, 30, 44, 0.85);
-    border-radius: 12px;
-    box-shadow: 
-        0 10px 30px rgba(0, 0, 0, 0.5),
-        0 0 0 1px rgba(60, 120, 180, 0.2),
-        inset 0 0 20px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
-    backdrop-filter: blur(10px);
-    display: flex;
-    flex-direction: column;
+.statistic-section-header h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #f0f7ff;
+  font-size: 1.08rem;
+  font-weight: 700;
 }
 
-.statistic-panel-header {
-    background: linear-gradient(90deg, #1a3a5f 0%, #2a4a6f 100%);
-    padding: 18px 25px;
-    border-bottom: 1px solid rgba(60, 120, 180, 0.4);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
+.statistic-section-header p {
+  margin: 5px 0 0;
+  color: #9fb9d3;
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
-.statistic-panel-header-title {
-    font-size: 1.2rem;
-    color: #e0e0e0;
-    display: flex;
-    align-items: center;
-    font-weight: 600;
+.statistic-kpi-section {
+  width: 100%;
 }
 
-.statistic-panel-header-title i {
-    margin-right: 12px;
-    color: #4dabf7;
+.statistic-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 12px;
+  padding: 16px;
 }
 
-.statistic-period-info,
-.statistic-defects-total {
-    font-size: 0.9rem;
-    color: #8fb4d9;
-    background-color: rgba(30, 45, 65, 0.6);
-    padding: 6px 12px;
-    border-radius: 6px;
+.statistic-summary-card {
+  min-height: 94px;
+  padding: 14px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(24, 39, 58, 0.72);
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  transition: 0.2s ease;
+  box-sizing: border-box;
 }
 
-.statistic-panel-content {
-    padding: 25px;
-    flex: 1;
-    overflow: visible; /* Убираем внутреннюю прокрутку */
+.statistic-summary-card:hover {
+  transform: translateY(-2px);
+  background: rgba(30, 49, 72, 0.9);
+  border-color: rgba(96, 165, 250, 0.34);
 }
 
-/* Общая статистика - карточки */
-.statistic-overall-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin-bottom: 30px;
+.statistic-summary-content {
+  min-width: 0;
 }
 
-.statistic-stat-card {
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    padding: 25px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    border: 1px solid rgba(60, 120, 180, 0.2);
-    transition: all 0.3s ease;
-    flex: 1;
-    min-width: 200px;
+.statistic-summary-value {
+  font-size: 1.45rem;
+  line-height: 1.1;
+  font-weight: 800;
+  margin-bottom: 5px;
+  word-break: break-word;
 }
 
-.statistic-stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-    border-color: rgba(77, 171, 247, 0.4);
+.statistic-summary-label {
+  color: #a9c1d8;
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
-.statistic-stat-value {
-    font-size: 2.5rem;
-    font-weight: 700;
-    margin-bottom: 8px;
+.statistic-summary-primary .statistic-summary-value {
+  color: #38bdf8;
 }
 
-.statistic-stat-label {
-    font-size: 0.95rem;
-    color: #b0c4de;
-    margin-bottom: 5px;
+.statistic-summary-success .statistic-summary-value {
+  color: #22c55e;
 }
 
-.statistic-stat-change {
-    font-size: 0.85rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    margin-top: 5px;
+.statistic-summary-danger .statistic-summary-value {
+  color: #ef4444;
 }
 
-.statistic-change-up {
-    color: #4CAF50;
+.statistic-summary-warning .statistic-summary-value {
+  color: #f59e0b;
 }
 
-.statistic-change-down {
-    color: #f44336;
+.statistic-charts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(330px, 1fr) minmax(330px, 1fr);
+  gap: 16px;
+  padding: 16px;
 }
 
-/* Цвета для статистических карточек */
-.statistic-stat-total {
-    border-top: 4px solid #2196F3;
+.statistic-chart-card {
+  min-height: 292px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(24, 39, 58, 0.64);
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  box-sizing: border-box;
+  min-width: 0;
 }
 
-.statistic-stat-total .statistic-stat-value {
-    color: #2196F3;
+.statistic-chart-main {
+  grid-row: span 2;
+  min-height: 600px;
 }
 
-.statistic-stat-defects {
-    border-top: 4px solid #f44336;
+.statistic-chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
-.statistic-stat-defects .statistic-stat-value {
-    color: #f44336;
+.statistic-chart-card-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f0f7ff;
+  font-size: 0.98rem;
+  line-height: 1.35;
 }
 
-.statistic-stat-quality {
-    border-top: 4px solid #4CAF50;
+.statistic-chart-empty {
+  min-height: 210px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8fb4d9;
+  text-align: center;
 }
 
-.statistic-stat-quality .statistic-stat-value {
-    color: #4CAF50;
+.statistic-chart-tooltip {
+  min-width: 150px;
+  padding: 10px 12px;
+  color: #e6f2ff;
+  background: rgba(7, 18, 34, 0.96);
+  border: 1px solid rgba(90, 170, 240, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
 }
 
-.statistic-stat-cost {
-    border-top: 4px solid #ff9800;
+.statistic-chart-tooltip-title {
+  margin-bottom: 8px;
+  color: #ffffff;
+  font-weight: 800;
 }
 
-.statistic-stat-cost .statistic-stat-value {
-    color: #ff9800;
+.statistic-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  font-size: 13px;
 }
 
-/* Графики */
-.statistic-chart-container {
-    height: 250px;
-    position: relative;
-    margin-top: 20px;
-    margin-bottom: 30px;
+.statistic-chart-tooltip-row strong {
+  margin-left: auto;
+  color: #ffffff;
 }
 
-.statistic-pie-chart-container {
-    height: 200px;
+.statistic-chart-tooltip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.statistic-chart-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: #8fb4d9;
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    border: 1px solid rgba(60, 120, 180, 0.2);
-    padding: 20px;
+.recharts-default-legend,
+.recharts-legend-item-text {
+  color: #b7d4ef !important;
 }
 
-.statistic-chart-placeholder i {
-    font-size: 3rem;
-    margin-bottom: 15px;
-    opacity: 0.7;
+.statistic-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
+  gap: 18px;
 }
 
-.statistic-chart-title {
-    font-size: 1.2rem;
-    margin-bottom: 10px;
-    color: #b0c4de;
-    text-align: center;
+.statistic-recent-shifts,
+.statistic-explain-list {
+  padding: 16px;
 }
 
-.statistic-chart-description {
-    font-size: 0.9rem;
-    text-align: center;
-    line-height: 1.4;
-}
-
-/* Распределение дефектов */
-.statistic-defects-distribution {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin-bottom: 30px;
-}
-
-.statistic-defect-type {
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    padding: 20px;
-    border-left: 4px solid;
-    flex: 1;
-    min-width: 200px;
-    transition: all 0.3s ease;
-}
-
-.statistic-defect-type:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-    border-color: rgba(77, 171, 247, 0.4);
-    background-color: rgba(35, 55, 80, 0.8);
-}
-
-.statistic-defect-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.statistic-defect-name {
-    font-weight: 600;
-    color: #e0e0e0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.statistic-defect-name i {
-    font-size: 1.1rem;
-}
-
-.statistic-defect-count {
-    font-size: 1.8rem;
-    font-weight: 700;
-}
-
-.statistic-defect-percentage {
-    font-size: 0.9rem;
-    color: #8fb4d9;
-    margin-top: 5px;
-}
-
-/* Цвета для типов дефектов */
-.statistic-defect-crack {
-    border-left-color: #f44336;
-}
-
-.statistic-defect-crack .statistic-defect-count {
-    color: #f44336;
-}
-
-.statistic-defect-porosity {
-    border-left-color: #ff9800;
-}
-
-.statistic-defect-porosity .statistic-defect-count {
-    color: #ff9800;
-}
-
-.statistic-defect-inclusion {
-    border-left-color: #2196F3;
-}
-
-.statistic-defect-inclusion .statistic-defect-count {
-    color: #2196F3;
-}
-
-.statistic-defect-scratch {
-    border-left-color: #9C27B0;
-}
-
-.statistic-defect-scratch .statistic-defect-count {
-    color: #9C27B0;
-}
-
-/* Прогресс-бар */
-.statistic-progress-container {
-    height: 8px;
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-top: 5px;
-}
-
-.statistic-progress-fill {
-    height: 100%;
-    border-radius: 4px;
-}
-
-.statistic-defect-crack .statistic-progress-fill {
-    background-color: #f44336;
-}
-
-.statistic-defect-porosity .statistic-progress-fill {
-    background-color: #ff9800;
-}
-
-.statistic-defect-inclusion .statistic-progress-fill {
-    background-color: #2196F3;
-}
-
-.statistic-defect-scratch .statistic-progress-fill {
-    background-color: #9C27B0;
-}
-
-/* Статистика по сменам */
-.statistic-shifts-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    margin-bottom: 20px;
+.statistic-recent-shifts {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
 }
 
 .statistic-shift-row {
-    display: flex;
-    align-items: center;
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    padding: 15px;
-    transition: all 0.3s ease;
+  min-height: 72px;
+  padding: 13px 15px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(24, 39, 58, 0.64);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  transition: 0.2s ease;
 }
 
 .statistic-shift-row:hover {
-    background-color: rgba(35, 55, 80, 0.8);
-    transform: translateX(5px);
+  transform: translateX(2px);
+  background: rgba(30, 49, 72, 0.86);
+  border-color: rgba(96, 165, 250, 0.28);
 }
 
-.statistic-shift-info {
-    flex: 1;
+.statistic-shift-main {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.statistic-shift-name {
-    font-weight: 600;
-    color: #e0e0e0;
-    margin-bottom: 5px;
+.statistic-shift-main strong {
+  color: #f0f7ff;
 }
 
-.statistic-shift-time {
-    font-size: 0.85rem;
-    color: #8fb4d9;
+.statistic-shift-main span {
+  color: #8fb4d9;
+  font-size: 0.83rem;
 }
 
-.statistic-shift-stats {
-    display: flex;
-    gap: 20px;
+.statistic-shift-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(74px, 1fr));
+  gap: 10px;
 }
 
-.statistic-shift-stat {
-    text-align: center;
-    min-width: 60px;
+.statistic-shift-metrics div {
+  text-align: center;
 }
 
-.statistic-shift-value {
-    font-weight: 700;
-    font-size: 1.2rem;
-    margin-bottom: 2px;
+.statistic-shift-metrics strong {
+  display: block;
+  color: #38bdf8;
+  font-size: 1rem;
 }
 
-.statistic-shift-defects {
-    color: #f44336;
+.statistic-shift-metrics span {
+  color: #8fb4d9;
+  font-size: 0.76rem;
 }
 
-.statistic-shift-ingots {
-    color: #2196F3;
+.statistic-danger-text {
+  color: #ef4444 !important;
 }
 
-.statistic-shift-quality {
-    color: #4CAF50;
+.statistic-success-text {
+  color: #22c55e !important;
 }
 
-.statistic-shift-label {
-    font-size: 0.8rem;
-    color: #8fb4d9;
+.statistic-empty-text {
+  padding: 20px;
+  color: #8fb4d9;
+  text-align: center;
 }
 
-/* Heat Map распределения дефектов */
-.statistic-heatmap-description {
-    color: #b0c4de;
-    font-size: 0.95rem;
-    margin-bottom: 15px;
+.statistic-explain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
 }
 
-.statistic-heatmap-container {
-    height: 180px;
-    position: relative;
-    background-color: #0a1520;
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 20px;
-    border: 1px solid rgba(60, 120, 180, 0.2);
+.statistic-explain-item {
+  display: flex;
+  gap: 11px;
+  padding: 13px;
+  border-radius: 14px;
+  background: rgba(24, 39, 58, 0.64);
+  border: 1px solid rgba(96, 165, 250, 0.15);
 }
 
-.statistic-heatmap-grid {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 10px;
+.statistic-explain-title {
+  margin-bottom: 3px;
+  color: #f0f7ff;
+  font-weight: 800;
+  font-size: 0.9rem;
 }
 
-.statistic-heatmap-cell {
-    flex: 1 0 calc(10% - 2px);
-    height: calc(20% - 2px);
-    border-radius: 2px;
-    transition: all 0.3s ease;
-    position: relative;
+.statistic-explain-text {
+  color: #9fb9d3;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
-.statistic-heatmap-cell:hover::after {
-    content: attr(data-defects);
-    position: absolute;
-    top: -30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: rgba(18, 30, 44, 0.9);
-    color: white;
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    z-index: 10;
-    border: 1px solid rgba(77, 171, 247, 0.3);
+.statistic-table-section {
+  margin-bottom: 30px;
 }
 
-/* Цвета Heat Map */
-.statistic-heatmap-low {
-    background-color: rgba(76, 175, 80, 0.2);
-    border: 1px solid rgba(76, 175, 80, 0.3);
+.statistic-table-wrap {
+  padding: 16px;
+  overflow-x: auto;
 }
 
-.statistic-heatmap-medium {
-    background-color: rgba(255, 152, 0, 0.3);
-    border: 1px solid rgba(255, 152, 0, 0.4);
+.statistic-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1450px;
+  overflow: hidden;
+  border-radius: 14px;
 }
 
-.statistic-heatmap-high {
-    background-color: rgba(244, 67, 54, 0.4);
-    border: 1px solid rgba(244, 67, 54, 0.5);
+.statistic-table th,
+.statistic-table td {
+  padding: 12px 13px;
+  text-align: left;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.13);
+  white-space: nowrap;
 }
 
-.statistic-heatmap-critical {
-    background-color: rgba(244, 67, 54, 0.7);
-    border: 1px solid rgba(244, 67, 54, 0.8);
+.statistic-table th {
+  color: #b8d4ee;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(24, 39, 58, 0.82);
 }
 
-/* Экономические показатели */
-.statistic-economic-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-bottom: 20px;
+.statistic-table td {
+  color: #e6eef8;
+  font-size: 0.88rem;
+  background: rgba(13, 25, 40, 0.34);
 }
 
-.statistic-economic-card {
-    background-color: rgba(30, 45, 65, 0.6);
-    border-radius: 8px;
-    padding: 20px;
-    text-align: center;
-    border: 1px solid rgba(60, 120, 180, 0.2);
-    flex: 1;
-    min-width: 150px;
-    transition: all 0.3s ease;
+.statistic-table tbody tr:hover td {
+  background: rgba(30, 49, 72, 0.64);
 }
 
-.statistic-economic-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+.statistic-table-empty {
+  padding: 28px !important;
+  text-align: center !important;
+  color: #8fb4d9 !important;
 }
 
-.statistic-economic-value {
-    font-size: 1.8rem;
-    font-weight: 700;
-    margin-bottom: 5px;
+.statistic-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  margin-top: 12px;
+  border-top: 1px solid rgba(96, 165, 250, 0.14);
 }
 
-.statistic-economic-label {
-    font-size: 0.9rem;
-    color: #b0c4de;
+.statistic-pagination-info {
+  color: #9fb9d3;
+  font-size: 0.86rem;
+  white-space: nowrap;
 }
 
-.statistic-economic-savings .statistic-economic-value {
-    color: #4CAF50;
+.statistic-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.statistic-economic-roi .statistic-economic-value {
-    color: #2196F3;
+.statistic-page-size-select {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: #e6eef8;
+  background: rgba(24, 39, 58, 0.88);
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  outline: none;
 }
 
-.statistic-economic-details {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 20px;
+.statistic-page-btn,
+.statistic-page-number {
+  height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: #c9dff4;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  cursor: pointer;
+  transition: 0.2s ease;
+  font-weight: 700;
 }
 
-.statistic-economic-detail {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(60, 120, 180, 0.1);
+.statistic-page-btn {
+  width: 36px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.statistic-economic-detail:last-child {
-    border-bottom: none;
+.statistic-page-btn:hover:not(:disabled),
+.statistic-page-number:hover {
+  background: rgba(96, 165, 250, 0.2);
+  color: #ffffff;
+  border-color: rgba(147, 197, 253, 0.45);
 }
 
-.statistic-economic-detail-value {
-    font-weight: 600;
+.statistic-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.statistic-economic-positive {
-    color: #4CAF50;
+.statistic-page-number.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1d6ed0, #348ceb);
+  border-color: rgba(147, 197, 253, 0.55);
+  box-shadow: 0 8px 18px rgba(29, 110, 208, 0.28);
 }
 
-.statistic-economic-negative {
-    color: #f44336;
+.statistic-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-/* Легенда */
-.statistic-legend {
-    display: flex;
-    gap: 20px;
-    margin-top: 20px;
-    flex-wrap: wrap;
+.statistic-page-dots {
+  color: #8fb4d9;
+  padding: 0 4px;
 }
 
-.statistic-legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9rem;
-    color: #b0c4de;
+.statistic-page-btn span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 800;
+  color: inherit;
+  transform: translateY(-1px);
 }
 
-.statistic-legend-color {
-    width: 15px;
-    height: 15px;
-    border-radius: 3px;
-}
+@media (max-width: 1500px) {
+  .statistic-filters-flex {
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+  }
 
-/* Экспорт данных */
-.statistic-export-options {
-    display: flex;
-    gap: 10px;
-    margin-top: 20px;
-}
+  .statistic-filter-buttons {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 
-.statistic-export-btn {
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 0.9rem;
-    flex: 1;
-}
+  .statistic-charts-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr);
+  }
 
-.statistic-export-btn:hover {
-    transform: translateY(-2px);
-}
-
-.statistic-export-excel {
-    background: linear-gradient(90deg, #217346 0%, #2e8b57 100%);
-    color: white;
-}
-
-.statistic-export-excel:hover {
-    background: linear-gradient(90deg, #2e8b57 0%, #3cb371 100%);
-    box-shadow: 0 5px 15px rgba(46, 139, 87, 0.4);
-}
-
-.statistic-export-pdf {
-    background: linear-gradient(90deg, #c62828 0%, #d32f2f 100%);
-    color: white;
-}
-
-.statistic-export-pdf:hover {
-    background: linear-gradient(90deg, #d32f2f 0%, #e53935 100%);
-    box-shadow: 0 5px 15px rgba(211, 47, 47, 0.4);
-}
-
-/* Уведомления */
-.notification {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 15px 25px;
-    border-radius: 8px;
-    z-index: 1000;
-    animation: statistic-slideIn 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
-    max-width: 400px;
-}
-
-.notification.success {
-    background-color: rgba(76, 175, 80, 0.9);
-    color: white;
-    border: 1px solid rgba(76, 175, 80, 0.3);
-}
-
-.notification.info {
-    background-color: rgba(33, 150, 243, 0.9);
-    color: white;
-    border: 1px solid rgba(33, 150, 243, 0.3);
-}
-
-/* Анимации */
-@keyframes statistic-slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes statistic-pulse {
-    0% { opacity: 0.7; }
-    50% { opacity: 1; }
-    100% { opacity: 0.7; }
-}
-
-.statistic-pulse-animation {
-    animation: statistic-pulse 2s infinite;
-}
-
-/* Адаптивность */
-@media (max-width: 1400px) {
-    .statistic-stats-panel {
-        flex-direction: column;
-    }
-    
-    .statistic-main-stats,
-    .statistic-sidebar-stats {
-        min-width: 100%;
-    }
-    
-    .statistic-sidebar-stats {
-        flex-direction: row;
-        flex-wrap: wrap;
-    }
-    
-    .statistic-stats-container {
-        flex: 1;
-        min-width: 300px;
-    }
+  .statistic-chart-main {
+    grid-row: auto;
+    min-height: 360px;
+  }
 }
 
 @media (max-width: 1200px) {
-    .statistic-filters-flex {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .statistic-filter-group {
-        min-width: 100%;
-    }
-    
-    .statistic-filter-buttons {
-        align-self: flex-end;
-    }
+  .statistic-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .statistic-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .statistic-lower-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 900px) {
-    .statistic-overall-stats {
-        flex-direction: column;
-    }
-    
-    .statistic-stat-card {
-        min-width: 100%;
-    }
-    
-    .statistic-defects-distribution {
-        flex-direction: column;
-    }
-    
-    .statistic-defect-type {
-        min-width: 100%;
-    }
-    
-    .statistic-sidebar-stats {
-        flex-direction: column;
-    }
-    
-    .statistic-stats-container {
-        min-width: 100%;
-    }
+  .statistic-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .statistic-pagination-controls {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .statistic-page {
+    padding: 10px;
+  }
+
+  .statistic-main-content {
+    gap: 14px;
+  }
+
+  .statistic-filters-panel {
+    padding: 14px;
+  }
+
+  .statistic-filters-flex {
+    grid-template-columns: 1fr;
+  }
+
+  .statistic-filter-buttons {
+    grid-column: auto;
+    flex-direction: column;
+    justify-content: stretch;
+  }
+
+  .statistic-filter-btn {
+    width: 100%;
+  }
+
+  .statistic-kpi-grid {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+
+  .statistic-summary-card {
+    min-height: 78px;
+  }
+
+  .statistic-summary-value {
+    font-size: 1.3rem;
+  }
+
+  .statistic-section-header {
+    padding: 14px 16px;
+  }
+
+  .statistic-charts-grid,
+  .statistic-table-wrap,
+  .statistic-recent-shifts,
+  .statistic-explain-list {
+    padding: 12px;
+  }
+
+  .statistic-shift-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .statistic-shift-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+}
+
+@media (max-width: 520px) {
+  .statistic-pagination-controls {
+    gap: 6px;
+  }
+
+  .statistic-page-size-select {
+    width: 100%;
+  }
+
+  .statistic-page-numbers {
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}
+
+.statistic-floating-notice {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  z-index: 99999;
+  width: min(420px, calc(100vw - 40px));
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(18, 30, 44, 0.96);
+  border: 1px solid rgba(77, 171, 247, 0.35);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(60, 120, 180, 0.16);
+  backdrop-filter: blur(12px);
+  transform: translateX(calc(100% + 40px));
+  opacity: 0;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.statistic-floating-notice.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.statistic-floating-notice strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.statistic-floating-notice p {
+  margin: 0;
+  color: #b8cce0;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 @media (max-width: 768px) {
-    .statistic-page {
-        padding: 10px;
-    }
-    
-    .statistic-container {
-        height: auto;
-    }
-    
-    .statistic-panel-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-    }
-    
-    .statistic-period-info,
-    .statistic-defects-total {
-        align-self: flex-start;
-    }
-    
-    .statistic-shift-stats {
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-    
-    .statistic-shift-stat {
-        min-width: 50px;
-    }
-    
-    .notification {
-        max-width: calc(100% - 40px);
-        left: 20px;
-        right: 20px;
-    }
+  .statistic-floating-notice {
+    top: 80px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
 }

@@ -1,4 +1,3 @@
-# app/api/users.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List
@@ -14,7 +13,8 @@ from app.core.database import get_db
 from datetime import date, datetime, time
 from fastapi import Query
 from sqlalchemy import func
-
+from sqlalchemy.exc import IntegrityError
+from app.models.shift import Shift
 from app.models.defect import Defect
 from app.models.inspection import Inspection
 
@@ -40,7 +40,6 @@ def to_user_public(u: User) -> dict:
 
 @router.get("/me", response_model=UserMe)
 def me(current_user: User = Depends(get_current_user)):
-    # убедимся, что role подгружена (если relationship lazy)
     role_name = current_user.role.name if current_user.role else None
 
     return {
@@ -61,18 +60,15 @@ def update_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # email unique
     if data.email and data.email != current_user.email:
         exists = db.query(User).filter(User.email == data.email).first()
         if exists:
             raise HTTPException(status_code=409, detail="Email already exists")
         current_user.email = data.email
 
-    # password
     if data.password:
         current_user.hashed_password = hash_password(data.password)
 
-    # profile fields
     if data.last_name is not None:
         current_user.last_name = data.last_name
     if data.first_name is not None:
@@ -102,20 +98,12 @@ def get_my_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Личная активность текущего пользователя.
-
-    Считаем:
-    - сколько слитков обработано в сменах, которые запускал пользователь;
-    - сколько дефектных событий он подтвердил / отклонил;
-    - последние обработанные им дефекты.
-    """
+   
 
     today_start = datetime.combine(date.today(), time.min)
 
     activity_time = func.coalesce(Defect.confirmed_at, Defect.created_at)
 
-    # Слитки, обработанные в сменах, которые запускал этот пользователь
     inspections_total = (
         db.query(Inspection)
         .filter(Inspection.created_by == current_user.id)
@@ -131,7 +119,6 @@ def get_my_activity(
         .count()
     )
 
-    # Дефектные события, которые пользователь рассмотрел
     reviewed_query = db.query(Defect).filter(Defect.confirmed_by == current_user.id)
 
     reviewed_total = reviewed_query.count()
@@ -227,10 +214,35 @@ def get_my_activity(
         },
         "recent_events": recent_events,
     }
-# ---------------------------
-# ADMIN CRUD
-# ---------------------------
+    
+def get_user_usage(db: Session, user_id: int) -> dict:
+    inspections_created = (
+        db.query(Inspection)
+        .filter(Inspection.created_by == user_id)
+        .count()
+    )
 
+    defects_confirmed = (
+        db.query(Defect)
+        .filter(Defect.confirmed_by == user_id)
+        .count()
+    )
+
+    shifts_started = (
+        db.query(Shift)
+        .filter(Shift.started_by == user_id)
+        .count()
+    )
+
+    total = inspections_created + defects_confirmed + shifts_started
+
+    return {
+        "inspections_created": inspections_created,
+        "defects_confirmed": defects_confirmed,
+        "shifts_started": shifts_started,
+        "total": total,
+    }
+    
 @router.get("", response_model=List[UserPublic])
 def list_users(
     db: Session = Depends(get_db),
@@ -244,7 +256,47 @@ def list_users(
     )
     return [to_user_public(u) for u in users]
 
+@router.get("/{user_id}/delete-check")
+def check_user_delete(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_permission("users.manage")),
+):
+    user_to_check = db.query(User).filter(User.id == user_id).first()
 
+    if not user_to_check:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    usage = get_user_usage(db, user_id)
+
+    is_self = current_admin.id == user_id
+    has_links = usage["total"] > 0
+
+    reasons = []
+
+    if is_self:
+        reasons.append("Нельзя удалить собственный аккаунт администратора")
+
+    if has_links:
+        reasons.append(
+            "Пользователь связан с журналом, сменами или подтверждёнными событиями"
+        )
+
+    can_delete = not is_self and not has_links
+
+    return {
+        "user_id": user_id,
+        "can_delete": can_delete,
+        "can_deactivate": not is_self and bool(user_to_check.is_active),
+        "recommended_action": "delete" if can_delete else "deactivate",
+        "usage": usage,
+        "reasons": reasons,
+        "message": (
+            "Пользователя можно удалить"
+            if can_delete
+            else "Пользователя нельзя безопасно удалить, рекомендуется деактивировать аккаунт"
+        ),
+    }
 @router.get("/{user_id}", response_model=UserPublic)
 def get_user(
     user_id: int,
@@ -268,12 +320,10 @@ def create_user(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("users.manage")),
 ):
-    # email unique
     exists = db.query(User).filter(User.email == data.email).first()
     if exists:
         raise HTTPException(status_code=409, detail="Email already exists")
 
-    # role exists
     role = db.query(Role).filter(Role.id == data.role_id).first()
     if not role:
         raise HTTPException(status_code=400, detail="Role not found")
@@ -292,7 +342,6 @@ def create_user(
     db.commit()
     db.refresh(u)
 
-    # подгрузим роль для role_name
     u = db.query(User).options(joinedload(User.role)).filter(User.id == u.id).first()
     return to_user_public(u)
 
@@ -302,24 +351,21 @@ def update_user(
     user_id: int,
     data: UserUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("users.manage")),
+    current_admin: User = Depends(require_permission("users.manage")),
 ):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Если меняем email — проверим уникальность
     if data.email and data.email != u.email:
         exists = db.query(User).filter(User.email == data.email).first()
         if exists:
             raise HTTPException(status_code=409, detail="Email already exists")
         u.email = data.email
 
-    # Если меняем пароль
     if data.password:
         u.hashed_password = hash_password(data.password)
 
-    # Остальные поля
     if data.last_name is not None:
         u.last_name = data.last_name
     if data.first_name is not None:
@@ -330,7 +376,6 @@ def update_user(
         u.phone = data.phone
 
     if data.is_active is not None:
-        # (опционально) запретить админу деактивировать самого себя
         if u.id == current_admin.id and data.is_active is False:
             raise HTTPException(status_code=400, detail="You cannot deactivate yourself")
         u.is_active = bool(data.is_active)
@@ -351,21 +396,51 @@ def update_user(
     )
     return to_user_public(u)
 
-
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("users.manage")),
+    current_admin: User = Depends(require_permission("users.manage")),
 ):
     u = db.query(User).filter(User.id == user_id).first()
+
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # (опционально) запретить удалять самого себя
     if u.id == current_admin.id:
-        raise HTTPException(status_code=400, detail="You cannot delete yourself")
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить собственный аккаунт",
+        )
 
-    db.delete(u)
-    db.commit()
+    usage = get_user_usage(db, user_id)
+
+    if usage["total"] > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Пользователь связан с журналом, сменами или событиями. Удаление запрещено, используйте деактивацию аккаунта.",
+                "can_delete": False,
+                "can_deactivate": bool(u.is_active),
+                "recommended_action": "deactivate",
+                "usage": usage,
+            },
+        )
+
+    try:
+        db.delete(u)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Пользователь связан с другими данными. Удаление запрещено, используйте деактивацию аккаунта.",
+                "can_delete": False,
+                "can_deactivate": bool(u.is_active),
+                "recommended_action": "deactivate",
+                "usage": usage,
+            },
+        )
+
     return None

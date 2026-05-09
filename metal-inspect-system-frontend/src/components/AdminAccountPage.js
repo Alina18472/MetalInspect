@@ -1,31 +1,69 @@
-
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopNav from "../components/TopNav";
 import "../styles/admin_account.css";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/Api";
 
+const roleToId = (roleLabel) =>
+  roleLabel === "Админ" || roleLabel === "Администратор" ? 1 : 2;
+
+const idToRoleLabel = (roleId) => (Number(roleId) === 1 ? "Админ" : "Инженер");
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  return String(value).replace("T", " ");
+};
+
+const formatApiError = (e) => {
+  const detail = e?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((x) => x?.msg).filter(Boolean);
+    if (msgs.length) return msgs.join(", ");
+  }
+
+  if (typeof detail === "string" && detail.trim()) return detail;
+
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string") return detail.message;
+    if (typeof detail.detail === "string") return detail.detail;
+    return JSON.stringify(detail);
+  }
+
+  if (typeof e?.message === "string" && e.message.trim()) return e.message;
+
+  return "Ошибка запроса";
+};
+
 const AdminAccount = () => {
-  const { user, loadMe, updateMe } = useAuth();
+  const { user, loadMe, updateMe, loadPermissions } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+
   const [permissionsList, setPermissionsList] = useState([]);
   const [rolesAccess, setRolesAccess] = useState([]);
   const [loadingPermissions, setLoadingPermissions] = useState(false);
   const [savingRoleId, setSavingRoleId] = useState(null);
   const [permissionsError, setPermissionsError] = useState("");
+
   const [activity, setActivity] = useState(null);
-  const [activityLoading, setActivityLoading] = useState(false);
+
+  const [permissionsPage, setPermissionsPage] = useState(1);
+  const [permissionsPerPage, setPermissionsPerPage] = useState(5);
 
   const [notification, setNotification] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [searchUnlocked, setSearchUnlocked] = useState(false);
+
+  const [userPage, setUserPage] = useState(1);
+  const [usersPerPage, setUsersPerPage] = useState(10);
 
   const [userModalOpen, setUserModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState("create"); // create | edit | reset
+  const [modalMode, setModalMode] = useState("create");
   const [modalError, setModalError] = useState("");
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -34,9 +72,19 @@ const AdminAccount = () => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [userToDelete, setUserToDelete] = useState(null);
+  const [deleteCheck, setDeleteCheck] = useState(null);
+  const [deleteCheckLoading, setDeleteCheckLoading] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
+
   const actionLockRef = useRef(false);
+  const searchInputRef = useRef(null);
+  const searchWasEditedRef = useRef(false);
+  const searchInputNameRef = useRef(
+    `metal-inspect-users-filter-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`
+  );
 
   const [formData, setFormData] = useState({
     id: null,
@@ -61,34 +109,14 @@ const AdminAccount = () => {
     confirmPassword: "",
   });
 
-  const roleToId = (roleLabel) =>
-    roleLabel === "Админ" || roleLabel === "Администратор" ? 1 : 2;
-
-  const idToRoleLabel = (roleId) =>
-    Number(roleId) === 1 ? "Админ" : "Инженер";
-
-  const formatApiError = (e) => {
-    const detail = e?.data?.detail;
-
-    if (Array.isArray(detail)) {
-      const msgs = detail.map((x) => x?.msg).filter(Boolean);
-      if (msgs.length) return msgs.join(", ");
-    }
-
-    if (typeof detail === "string" && detail.trim()) return detail;
-    if (typeof e?.message === "string" && e.message.trim()) return e.message;
-
-    return "Ошибка запроса";
-  };
-
-  const showToast = (message, type = "success") => {
+  const showToast = useCallback((message, type = "success") => {
     setNotification({ message, type, show: true });
 
     setTimeout(() => {
       setNotification((prev) => (prev ? { ...prev, show: false } : null));
       setTimeout(() => setNotification(null), 250);
     }, 2500);
-  };
+  }, []);
 
   const runLocked = async (fn) => {
     if (actionLockRef.current) return;
@@ -102,7 +130,7 @@ const AdminAccount = () => {
     }
   };
 
-  const refreshUsers = async () => {
+  const refreshUsers = useCallback(async () => {
     setLoadingUsers(true);
 
     try {
@@ -114,90 +142,42 @@ const AdminAccount = () => {
     } finally {
       setLoadingUsers(false);
     }
-  };
-  const loadRolePermissions = async () => {
+  }, [showToast]);
+
+  const loadRolePermissions = useCallback(async () => {
     setLoadingPermissions(true);
     setPermissionsError("");
-  
+
     try {
       const data = await api.getRolePermissions();
-  
-      setPermissionsList(data?.permissions || []);
-      setRolesAccess(data?.roles || []);
+
+      setPermissionsList(Array.isArray(data?.permissions) ? data.permissions : []);
+      setRolesAccess(Array.isArray(data?.roles) ? data.roles : []);
+      setPermissionsPage(1);
     } catch (e) {
       console.error("getRolePermissions error:", e);
       setPermissionsError(formatApiError(e) || "Не удалось загрузить права доступа");
     } finally {
       setLoadingPermissions(false);
     }
-  };
-  
-  const getRoleTitle = (role) => {
-    if (Number(role.role_id) === 1) return "Администратор";
-    if (Number(role.role_id) === 2) return "Инженер";
-    return role.role_name || `Роль #${role.role_id}`;
-  };
-  
-  const isPermissionChecked = (roleId, permissionCode) => {
-    const role = rolesAccess.find((r) => Number(r.role_id) === Number(roleId));
-    return role?.permissions?.includes(permissionCode) || false;
-  };
-  
-  const togglePermission = (roleId, permissionCode) => {
-    setRolesAccess((prev) =>
-      prev.map((role) => {
-        if (Number(role.role_id) !== Number(roleId)) return role;
-  
-        const current = role.permissions || [];
-        const exists = current.includes(permissionCode);
-  
-        return {
-          ...role,
-          permissions: exists
-            ? current.filter((code) => code !== permissionCode)
-            : [...current, permissionCode],
-        };
-      })
-    );
-  };
-  
-  const saveRolePermissions = async (roleId) => {
-    const role = rolesAccess.find((r) => Number(r.role_id) === Number(roleId));
-  
-    if (!role) return;
-  
-    setSavingRoleId(roleId);
-    setPermissionsError("");
-  
-    try {
-      await api.updateRolePermissions(roleId, role.permissions || []);
-      showToast(`Права роли "${getRoleTitle(role)}" обновлены`, "success");
-      await loadRolePermissions();
-    } catch (e) {
-      console.error("updateRolePermissions error:", e);
-      setPermissionsError(formatApiError(e) || "Не удалось сохранить права роли");
-    } finally {
-      setSavingRoleId(null);
-    }
-  };
+  }, []);
 
-  const loadActivity = async () => {
-    setActivityLoading(true);
-
+  const loadActivity = useCallback(async () => {
     try {
       const data = await api.getMyActivity();
       setActivity(data);
     } catch (e) {
       console.error("getMyActivity error:", e);
       showToast(formatApiError(e) || "Не удалось загрузить активность", "error");
-    } finally {
-      setActivityLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     document.body.classList.add("admin-account-page");
-    return () => document.body.classList.remove("admin-account-page");
+
+    return () => {
+      document.body.classList.remove("admin-account-page");
+    };
   }, []);
 
   useEffect(() => {
@@ -210,6 +190,29 @@ const AdminAccount = () => {
     refreshUsers();
     loadActivity();
     loadRolePermissions();
+  }, [refreshUsers, loadActivity, loadRolePermissions]);
+
+  useEffect(() => {
+    const clearAutofilledSearch = () => {
+      if (searchWasEditedRef.current) return;
+      if (document.activeElement === searchInputRef.current) return;
+
+      setSearchTerm("");
+
+      if (searchInputRef.current) {
+        searchInputRef.current.value = "";
+      }
+    };
+
+    clearAutofilledSearch();
+
+    const timeouts = [100, 300, 700, 1200].map((delay) =>
+      setTimeout(clearAutofilledSearch, delay)
+    );
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
   }, []);
 
   useEffect(() => {
@@ -241,10 +244,18 @@ const AdminAccount = () => {
         ? `${last} ${first[0]}.${pat ? `${pat[0]}.` : ""}`
         : fullName;
 
+    const initials =
+      `${last?.[0] || ""}${first?.[0] || ""}`.trim().toUpperCase() ||
+      String(user?.email || "А").charAt(0).toUpperCase();
+
     return {
       name: fullName,
       shortName,
-      role: Number(user?.role_id) === 1 ? "Администратор" : "Инженер",
+      initials,
+      role:
+        user?.role_name ||
+        user?.role?.name ||
+        (Number(user?.role_id) === 1 ? "Администратор" : "Инженер"),
       employeeId: `#${user?.id ?? "—"}`,
       email: user?.email || "—",
       phone: user?.phone || "—",
@@ -285,7 +296,6 @@ const AdminAccount = () => {
   const filteredUsers = useMemo(() => {
     return normalizedUsers.filter((u) => {
       const s = (searchTerm || "").toLowerCase().trim();
-
       const fullName = `${u.lastname} ${u.name} ${u.middlename}`.toLowerCase();
 
       const matchesSearch =
@@ -305,20 +315,145 @@ const AdminAccount = () => {
     });
   }, [normalizedUsers, searchTerm, roleFilter, statusFilter]);
 
+  useEffect(() => {
+    setUserPage(1);
+  }, [searchTerm, roleFilter, statusFilter]);
+
+  const totalUserPages = Math.max(
+    Math.ceil(filteredUsers.length / usersPerPage),
+    1
+  );
+
+  const safeUserPage = Math.min(userPage, totalUserPages);
+  const userStartIndex = (safeUserPage - 1) * usersPerPage;
+  const userEndIndex = userStartIndex + usersPerPage;
+
+  const paginatedUsers = filteredUsers.slice(userStartIndex, userEndIndex);
+
+  const shownUsersStart = filteredUsers.length > 0 ? userStartIndex + 1 : 0;
+  const shownUsersEnd = Math.min(userEndIndex, filteredUsers.length);
+
+  const userPageNumbers = Array.from(
+    { length: totalUserPages },
+    (_, index) => index + 1
+  ).filter((page) => {
+    return (
+      page === 1 ||
+      page === totalUserPages ||
+      Math.abs(page - safeUserPage) <= 2
+    );
+  });
+
+  const totalPermissionPages = Math.max(
+    Math.ceil(permissionsList.length / permissionsPerPage),
+    1
+  );
+
+  const safePermissionPage = Math.min(permissionsPage, totalPermissionPages);
+  const permissionStartIndex = (safePermissionPage - 1) * permissionsPerPage;
+  const permissionEndIndex = permissionStartIndex + permissionsPerPage;
+
+  const paginatedPermissions = permissionsList.slice(
+    permissionStartIndex,
+    permissionEndIndex
+  );
+
+  const shownPermissionsStart =
+    permissionsList.length > 0 ? permissionStartIndex + 1 : 0;
+
+  const shownPermissionsEnd = Math.min(
+    permissionEndIndex,
+    permissionsList.length
+  );
+
+  const permissionPageNumbers = Array.from(
+    { length: totalPermissionPages },
+    (_, index) => index + 1
+  ).filter((page) => {
+    return (
+      page === 1 ||
+      page === totalPermissionPages ||
+      Math.abs(page - safePermissionPage) <= 2
+    );
+  });
+
   const activitySummary = activity?.summary || {};
 
   const inspectionsTotal = Number(activitySummary.inspections_total || 0);
-  const inspectionsToday = Number(activitySummary.inspections_today || 0);
-  const reviewedTotal = Number(activitySummary.reviewed_total || 0);
   const reviewedToday = Number(activitySummary.reviewed_today || 0);
   const confirmedTotal = Number(activitySummary.confirmed_total || 0);
   const rejectedTotal = Number(activitySummary.rejected_total || 0);
-  const falseAlarmRate = Number(activitySummary.false_alarm_rate || 0);
   const lastActivityAt = activitySummary.last_activity_at || null;
 
-  const formatDateTime = (value) => {
-    if (!value) return "—";
-    return value.replace("T", " ");
+  const getRoleTitle = (role) => {
+    if (Number(role.role_id) === 1) return "Администратор";
+    if (Number(role.role_id) === 2) return "Инженер";
+    return role.role_name || `Роль #${role.role_id}`;
+  };
+
+  const isPermissionChecked = (roleId, permissionCode) => {
+    const role = rolesAccess.find((r) => Number(r.role_id) === Number(roleId));
+    return role?.permissions?.includes(permissionCode) || false;
+  };
+
+  const togglePermission = (roleId, permissionCode) => {
+    setRolesAccess((prev) =>
+      prev.map((role) => {
+        if (Number(role.role_id) !== Number(roleId)) return role;
+
+        const current = role.permissions || [];
+        const exists = current.includes(permissionCode);
+
+        return {
+          ...role,
+          permissions: exists
+            ? current.filter((code) => code !== permissionCode)
+            : [...current, permissionCode],
+        };
+      })
+    );
+  };
+
+  const saveAllRolePermissions = async () => {
+    if (!rolesAccess.length) return;
+
+    setSavingRoleId("all");
+    setPermissionsError("");
+
+    try {
+      for (const role of rolesAccess) {
+        await api.updateRolePermissions(role.role_id, role.permissions || []);
+      }
+
+      showToast("Права доступа обновлены", "success");
+      await loadRolePermissions();
+      await loadPermissions();
+    } catch (e) {
+      console.error("update all role permissions error:", e);
+      setPermissionsError(formatApiError(e) || "Не удалось сохранить права доступа");
+    } finally {
+      setSavingRoleId(null);
+    }
+  };
+
+  const goToUserPage = (page) => {
+    const normalizedPage = Math.min(Math.max(page, 1), totalUserPages);
+    setUserPage(normalizedPage);
+  };
+
+  const changeUsersPerPage = (value) => {
+    setUsersPerPage(Number(value));
+    setUserPage(1);
+  };
+
+  const goToPermissionPage = (page) => {
+    const normalizedPage = Math.min(Math.max(page, 1), totalPermissionPages);
+    setPermissionsPage(normalizedPage);
+  };
+
+  const changePermissionsPerPage = (value) => {
+    setPermissionsPerPage(Number(value));
+    setPermissionsPage(1);
   };
 
   const copyEmail = async (email) => {
@@ -331,9 +466,15 @@ const AdminAccount = () => {
   };
 
   const resetFilters = () => {
+    searchWasEditedRef.current = true;
+
     setSearchTerm("");
     setRoleFilter("all");
     setStatusFilter("all");
+
+    if (searchInputRef.current) {
+      searchInputRef.current.value = "";
+    }
   };
 
   const toApiCreatePayload = (fd) => ({
@@ -401,26 +542,8 @@ const AdminAccount = () => {
     setUserModalOpen(true);
   };
 
-  const openResetPasswordModal = (u) => {
-    setModalError("");
-    setModalMode("reset");
-    setFormData({
-      id: u.id,
-      lastname: u.lastname || "",
-      name: u.name || "",
-      middlename: u.middlename || "",
-      email: u.email || "",
-      phone: u.phone || "",
-      password: "",
-      confirmPassword: "",
-      role: idToRoleLabel(u.role_id),
-      is_active: !!u.is_active,
-    });
-    setUserModalOpen(true);
-  };
-
-  const closeUserModal = () => {
-    if (isSaving) return;
+  const closeUserModal = (force = false) => {
+    if (isSaving && !force) return;
 
     setUserModalOpen(false);
     setModalMode("create");
@@ -454,13 +577,6 @@ const AdminAccount = () => {
       }
     }
 
-    if (modalMode === "reset") {
-      if (!pass) return "Введите новый пароль";
-      if (pass.length < 6) return "Пароль должен быть не короче 6 символов";
-      if (!conf) return "Подтвердите пароль";
-      if (pass !== conf) return "Пароли не совпадают";
-    }
-
     return "";
   };
 
@@ -482,17 +598,12 @@ const AdminAccount = () => {
         if (modalMode === "create") {
           await api.createUser(toApiCreatePayload(formData));
           showToast("Пользователь создан", "success");
-        } else if (modalMode === "edit") {
+        } else {
           await api.updateUser(formData.id, toApiUpdatePayload(formData));
           showToast("Пользователь обновлён", "success");
-        } else if (modalMode === "reset") {
-          await api.updateUser(formData.id, {
-            password: formData.password,
-          });
-          showToast("Пароль обновлён", "success");
         }
 
-        closeUserModal();
+        closeUserModal(true);
         await refreshUsers();
       } catch (e) {
         console.error("User save error:", e);
@@ -535,18 +646,78 @@ const AdminAccount = () => {
     }
   };
 
-  const confirmDeleteUser = (u) => {
+  const confirmDeleteUser = async (u) => {
     setDeleteError("");
+    setDeleteCheck(null);
     setUserToDelete(u);
     setDeleteConfirmOpen(true);
+
+    if (Number(user?.id) === Number(u.id)) {
+      setDeleteCheck({
+        can_delete: false,
+        can_deactivate: false,
+        recommended_action: "none",
+        message: "Нельзя удалить собственный аккаунт",
+        reasons: ["Нельзя удалить собственный аккаунт администратора"],
+        usage: {
+          inspections_created: 0,
+          defects_confirmed: 0,
+          shifts_started: 0,
+          total: 0,
+        },
+      });
+
+      return;
+    }
+
+    setDeleteCheckLoading(true);
+
+    try {
+      const check = await api.checkUserDeletion(u.id);
+      setDeleteCheck(check);
+    } catch (e) {
+      console.error("delete check error:", e);
+      setDeleteError(formatApiError(e) || "Не удалось проверить возможность удаления");
+    } finally {
+      setDeleteCheckLoading(false);
+    }
   };
 
-  const closeDeleteModal = () => {
-    if (isSaving) return;
+  const closeDeleteModal = (force = false) => {
+    if (isSaving && !force) return;
 
     setDeleteConfirmOpen(false);
     setUserToDelete(null);
     setDeleteError("");
+    setDeleteCheck(null);
+  };
+
+  const deactivateUserFromDeleteModal = async () => {
+    await runLocked(async () => {
+      if (!userToDelete?.id) return;
+      if (isSaving) return;
+
+      if (Number(user?.id) === Number(userToDelete.id)) {
+        setDeleteError("Нельзя деактивировать собственный аккаунт");
+        return;
+      }
+
+      setDeleteError("");
+      setIsSaving(true);
+
+      try {
+        await api.deactivateUser(userToDelete.id);
+
+        showToast("Аккаунт пользователя деактивирован", "success");
+        closeDeleteModal(true);
+        await refreshUsers();
+      } catch (e) {
+        console.error("Deactivate error:", e);
+        setDeleteError(formatApiError(e) || "Не удалось деактивировать аккаунт");
+      } finally {
+        setIsSaving(false);
+      }
+    });
   };
 
   const deleteUser = async () => {
@@ -565,11 +736,19 @@ const AdminAccount = () => {
         );
 
         showToast("Пользователь удалён", "success");
-        closeDeleteModal();
+        closeDeleteModal(true);
         await refreshUsers();
       } catch (e) {
         console.error("Delete error:", e);
-        setDeleteError(formatApiError(e));
+
+        const detail = e?.data?.detail;
+
+        if (e?.status === 409 && detail && typeof detail === "object") {
+          setDeleteCheck(detail);
+          setDeleteError(detail.message || "Пользователя нельзя удалить");
+        } else {
+          setDeleteError(formatApiError(e));
+        }
       } finally {
         setIsSaving(false);
       }
@@ -657,13 +836,23 @@ const AdminAccount = () => {
   }
 
   const modalTitle =
-    modalMode === "create"
-      ? "Создание пользователя"
-      : modalMode === "reset"
-      ? "Сброс пароля"
-      : "Редактирование пользователя";
+    modalMode === "create" ? "Создание пользователя" : "Редактирование пользователя";
 
-  const isResetMode = modalMode === "reset";
+  const closeButtonStyle = {
+    width: "auto",
+    padding: "0 12px",
+    fontSize: "0.86rem",
+    fontWeight: 700,
+  };
+
+  const errorBoxStyle = {
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 10,
+    background: "rgba(244,67,54,0.15)",
+    color: "#ffb4b4",
+  };
+
   return (
     <div className="admin-account-container">
       {notification && (
@@ -672,126 +861,88 @@ const AdminAccount = () => {
             notification.show ? "show" : ""
           }`}
         >
-          <i
-            className={`fas ${
-              notification.type === "success"
-                ? "fa-check-circle"
-                : notification.type === "error"
-                ? "fa-exclamation-circle"
-                : "fa-info-circle"
-            }`}
-          ></i>
           <div className="admin-notification-message">
             {notification.message}
           </div>
         </div>
       )}
-  
-      <TopNav
-        subtitle="Система распознавания трещин в слитках • Аккаунт администратора"
-        userName={profile.name}
-        userRole="Администратор"
-      />
-  
+
+      <div className="admin-topnav-shell">
+        <TopNav
+          subtitle="Система распознавания трещин в слитках - Аккаунт"
+          userName={profile.name}
+          userRole="Администратор"
+        />
+      </div>
+
       <div className="admin-main-content">
         <div className="admin-profile-sidebar">
           <div className="admin-profile-card">
             <div className="admin-profile-header">
               <div className="admin-avatar-wrapper">
                 <div className="admin-profile-avatar">
-                  <i className="fas fa-user-shield"></i>
+                  <span>{profile.initials}</span>
                 </div>
                 <div className="admin-status-indicator admin-status-online"></div>
               </div>
-  
+
               <div className="admin-profile-name">{profile.shortName}</div>
               <div className="admin-profile-role">{profile.role}</div>
               <div className="admin-profile-status">
                 {profile.is_active ? "Аккаунт активен" : "Аккаунт неактивен"}
               </div>
             </div>
-  
+
             <div className="admin-profile-details">
               <div className="admin-detail-row">
                 <div className="admin-detail-label">
-                  <i className="fas fa-id-badge"></i>
                   <span>ID администратора:</span>
                 </div>
                 <div className="admin-detail-value">{profile.employeeId}</div>
               </div>
-  
+
               <div className="admin-detail-row">
                 <div className="admin-detail-label">
-                  <i className="fas fa-envelope"></i>
                   <span>Email:</span>
                 </div>
                 <div className="admin-detail-value">{profile.email}</div>
               </div>
-  
+
               <div className="admin-detail-row">
                 <div className="admin-detail-label">
-                  <i className="fas fa-phone"></i>
                   <span>Телефон:</span>
                 </div>
                 <div className="admin-detail-value">{profile.phone}</div>
               </div>
-  
+
               <div className="admin-detail-row">
                 <div className="admin-detail-label">
-                  <i className="fas fa-clock"></i>
                   <span>Последняя активность:</span>
                 </div>
                 <div className="admin-detail-value">
                   {formatDateTime(lastActivityAt)}
                 </div>
               </div>
-  
+
               <div style={{ marginTop: 14 }}>
                 <button
                   className="admin-modal-button admin-modal-primary"
                   style={{ width: "100%" }}
                   onClick={() => setProfileModalOpen(true)}
                 >
-                  <i className="fas fa-user-edit"></i>
                   Обновить профиль
-                </button>
-              </div>
-  
-              <div style={{ marginTop: 10 }}>
-                <button
-                  className="admin-modal-button admin-modal-secondary"
-                  style={{ width: "100%" }}
-                  onClick={loadActivity}
-                  disabled={activityLoading}
-                >
-                  <i
-                    className={`fas ${
-                      activityLoading ? "fa-spinner fa-spin" : "fa-sync-alt"
-                    }`}
-                  ></i>
-                  {activityLoading ? "Обновление..." : "Обновить активность"}
                 </button>
               </div>
             </div>
           </div>
-  
+
           <div className="admin-system-stats">
             <div className="admin-stats-header">
-              <h2>
-                <i className="fas fa-chart-pie"></i> Пользователи
-              </h2>
+              <h2>Пользователи</h2>
             </div>
-  
+
             <div className="admin-stats-grid">
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #4dabf7, #2a6bc0)",
-                  }}
-                >
-                  <i className="fas fa-users"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">
                     {systemStats.totalUsers}
@@ -799,16 +950,8 @@ const AdminAccount = () => {
                   <div className="admin-stat-label">Всего пользователей</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #4CAF50, #2E7D32)",
-                  }}
-                >
-                  <i className="fas fa-user-check"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">
                     {systemStats.activeUsers}
@@ -816,16 +959,8 @@ const AdminAccount = () => {
                   <div className="admin-stat-label">Активных</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #9C27B0, #6A1B9A)",
-                  }}
-                >
-                  <i className="fas fa-user-cog"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">
                     {systemStats.engineers}
@@ -833,16 +968,8 @@ const AdminAccount = () => {
                   <div className="admin-stat-label">Инженеров</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #FF9800, #EF6C00)",
-                  }}
-                >
-                  <i className="fas fa-user-shield"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">{systemStats.admins}</div>
                   <div className="admin-stat-label">Администраторов</div>
@@ -850,144 +977,134 @@ const AdminAccount = () => {
               </div>
             </div>
           </div>
-  
+
           <div className="admin-system-stats">
             <div className="admin-stats-header">
-              <h2>
-                <i className="fas fa-clipboard-check"></i> Моя активность
-              </h2>
+              <h2>Моя активность</h2>
             </div>
-  
+
             <div className="admin-stats-grid">
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #4dabf7, #2a6bc0)",
-                  }}
-                >
-                  <i className="fas fa-industry"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">{inspectionsTotal}</div>
                   <div className="admin-stat-label">Слитков в моих сменах</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #4CAF50, #2E7D32)",
-                  }}
-                >
-                  <i className="fas fa-check-circle"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">{confirmedTotal}</div>
                   <div className="admin-stat-label">Подтверждено</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #FF9800, #EF6C00)",
-                  }}
-                >
-                  <i className="fas fa-times-circle"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">{rejectedTotal}</div>
                   <div className="admin-stat-label">Отклонено</div>
                 </div>
               </div>
-  
+
               <div className="admin-stat-item">
-                <div
-                  className="admin-stat-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #00BCD4, #00838F)",
-                  }}
-                >
-                  <i className="fas fa-calendar-day"></i>
-                </div>
                 <div className="admin-stat-info">
                   <div className="admin-stat-number">{reviewedToday}</div>
                   <div className="admin-stat-label">Рассмотрено сегодня</div>
                 </div>
               </div>
             </div>
-  
-            <div style={{ color: "#8fb4d9", fontSize: "0.9rem", marginTop: 12 }}>
-              Доля отклонённых срабатываний среди рассмотренных:{" "}
-              {falseAlarmRate.toFixed(1)}%
-            </div>
           </div>
         </div>
-  
+
         <div className="admin-management-panel">
           <div className="admin-management-header">
             <div className="admin-header-title">
-              <h1>
-                <i className="fas fa-users-cog"></i> Управление пользователями
-              </h1>
+              <h1>Управление пользователями</h1>
               <p className="admin-header-subtitle">
                 Создание, редактирование, деактивация и удаление пользователей
                 системы
               </p>
             </div>
-  
+
             <div className="admin-header-actions">
               <button
                 className="admin-action-button admin-action-primary"
                 onClick={openCreateModal}
               >
-                <i className="fas fa-user-plus"></i>
                 Добавить пользователя
               </button>
-  
+
               <button
                 className="admin-action-button admin-action-secondary"
                 onClick={resetFilters}
               >
-                <i className="fas fa-filter"></i>
                 Сбросить фильтры
               </button>
             </div>
           </div>
-  
+
           <div className="admin-filters-panel">
             <div className="admin-search-container">
-              <i className="fas fa-search"></i>
-  
+              <div className="admin-autofill-trap" aria-hidden="true">
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  tabIndex="-1"
+                />
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  tabIndex="-1"
+                />
+              </div>
+
               <input
+                ref={searchInputRef}
                 type="text"
+                id={searchInputNameRef.current}
+                name={searchInputNameRef.current}
                 autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                spellCheck="false"
+                readOnly={!searchUnlocked}
                 placeholder="Поиск по ФИО, email или телефону..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onMouseDown={() => setSearchUnlocked(true)}
+                onFocus={() => setSearchUnlocked(true)}
+                onChange={(e) => {
+                  searchWasEditedRef.current = true;
+                  setSearchTerm(e.target.value);
+                }}
                 className="admin-search-input"
               />
-  
+
               {searchTerm && (
                 <button
                   className="admin-search-clear"
-                  onClick={() => setSearchTerm("")}
+                  onClick={() => {
+                    searchWasEditedRef.current = true;
+                    setSearchTerm("");
+
+                    if (searchInputRef.current) {
+                      searchInputRef.current.value = "";
+                      searchInputRef.current.focus();
+                    }
+                  }}
                 >
-                  <i className="fas fa-times"></i>
+                  ×
                 </button>
               )}
             </div>
-  
+
             <div className="admin-filters-container">
               <div className="admin-filter-group">
-                <label className="admin-filter-label">
-                  <i className="fas fa-user-tag"></i>
-                  Роль:
-                </label>
-  
+                <label className="admin-filter-label">Роль:</label>
+
                 <select
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
@@ -998,13 +1115,10 @@ const AdminAccount = () => {
                   <option value="Админ">Администратор</option>
                 </select>
               </div>
-  
+
               <div className="admin-filter-group">
-                <label className="admin-filter-label">
-                  <i className="fas fa-user-clock"></i>
-                  Статус:
-                </label>
-  
+                <label className="admin-filter-label">Статус:</label>
+
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
@@ -1015,16 +1129,15 @@ const AdminAccount = () => {
                   <option value="inactive">Неактивные</option>
                 </select>
               </div>
-  
+
               <div className="admin-filter-stats">
                 <span className="admin-filter-stat">
-                  <i className="fas fa-file-alt"></i>
                   Найдено: {filteredUsers.length} из {normalizedUsers.length}
                 </span>
               </div>
             </div>
           </div>
-  
+
           <div className="admin-users-table-container">
             <div className="admin-users-table">
               <div className="admin-table-header">
@@ -1035,17 +1148,16 @@ const AdminAccount = () => {
                 <div className="admin-table-cell admin-cell-medium">Статус</div>
                 <div className="admin-table-cell admin-cell-large">Действия</div>
               </div>
-  
+
               <div className="admin-table-body">
                 {loadingUsers ? (
                   <div className="admin-table-empty">
                     <div className="admin-empty-state">
-                      <i className="fas fa-spinner fa-spin"></i>
                       <h3>Загрузка пользователей...</h3>
                     </div>
                   </div>
                 ) : filteredUsers.length > 0 ? (
-                  filteredUsers.map((u) => (
+                  paginatedUsers.map((u) => (
                     <div
                       key={u.id}
                       className={`admin-table-row ${
@@ -1055,14 +1167,18 @@ const AdminAccount = () => {
                       <div className="admin-table-cell admin-cell-small">
                         <span className="admin-user-id">#{u.id}</span>
                       </div>
-  
+
                       <div className="admin-table-cell">
                         <div className="admin-user-name">
                           <div className="admin-user-fullname">
                             {`${u.lastname} ${u.name} ${u.middlename}`.trim() ||
                               "Без имени"}
+
+                            {Number(user?.id) === Number(u.id) && (
+                              <span className="admin-current-user-badge">Вы</span>
+                            )}
                           </div>
-  
+
                           <div className="admin-user-initials">
                             {u.lastname} {u.name?.charAt(0) || ""}
                             {u.name ? "." : ""}
@@ -1071,7 +1187,7 @@ const AdminAccount = () => {
                           </div>
                         </div>
                       </div>
-  
+
                       <div className="admin-table-cell">
                         <div className="admin-user-contact">
                           <div
@@ -1079,73 +1195,72 @@ const AdminAccount = () => {
                             onClick={() => copyEmail(u.email)}
                             title="Кликните для копирования"
                           >
-                            <i className="fas fa-envelope"></i>
                             {u.email}
                           </div>
-  
+
                           <div className="admin-user-phone">
-                            <i className="fas fa-phone"></i>
                             {u.phone || "—"}
                           </div>
                         </div>
                       </div>
-  
+
                       <div className="admin-table-cell admin-cell-medium">
                         <div
                           className={`admin-user-role admin-role-${
                             u.role_id === 1 ? "admin" : "engineer"
                           }`}
                         >
-                          <i
-                            className={
-                              u.role_id === 1
-                                ? "fas fa-user-shield"
-                                : "fas fa-user-cog"
-                            }
-                          ></i>
                           {u.role}
                         </div>
                       </div>
-  
+
                       <div className="admin-table-cell admin-cell-medium">
                         <div
                           className={`admin-user-status ${
                             u.is_active
                               ? "admin-status-active"
                               : "admin-status-inactive"
+                          } ${
+                            Number(user?.id) === Number(u.id)
+                              ? "admin-status-disabled"
+                              : ""
                           }`}
-                          onClick={() => toggleUserStatus(u.id)}
-                          title="Кликните, чтобы переключить"
+                          onClick={() => {
+                            if (Number(user?.id) !== Number(u.id)) {
+                              toggleUserStatus(u.id);
+                            }
+                          }}
+                          title={
+                            Number(user?.id) === Number(u.id)
+                              ? "Нельзя деактивировать собственный аккаунт"
+                              : "Кликните, чтобы переключить статус"
+                          }
                         >
-                          <div className="admin-status-indicator-small"></div>
                           {u.is_active ? "Активен" : "Неактивен"}
                         </div>
                       </div>
-  
+
                       <div className="admin-table-cell admin-cell-large">
                         <div className="admin-user-actions">
                           <button
-                            className="admin-action-icon admin-action-edit"
+                            className="admin-row-action admin-row-action-edit"
                             onClick={() => openEditModal(u)}
-                            title="Редактировать"
+                            title="Редактировать пользователя"
                           >
-                            <i className="fas fa-edit"></i>
+                            Редактировать
                           </button>
-  
+
                           <button
-                            className="admin-action-icon admin-action-reset"
-                            onClick={() => openResetPasswordModal(u)}
-                            title="Сбросить пароль"
-                          >
-                            <i className="fas fa-key"></i>
-                          </button>
-  
-                          <button
-                            className="admin-action-icon admin-action-delete"
+                            className="admin-row-action admin-row-action-delete"
                             onClick={() => confirmDeleteUser(u)}
-                            title="Удалить"
+                            title={
+                              Number(user?.id) === Number(u.id)
+                                ? "Нельзя удалить собственный аккаунт"
+                                : "Удалить пользователя"
+                            }
+                            disabled={Number(user?.id) === Number(u.id)}
                           >
-                            <i className="fas fa-trash-alt"></i>
+                            Удалить
                           </button>
                         </div>
                       </div>
@@ -1154,7 +1269,6 @@ const AdminAccount = () => {
                 ) : (
                   <div className="admin-table-empty">
                     <div className="admin-empty-state">
-                      <i className="fas fa-users-slash"></i>
                       <h3>Пользователи не найдены</h3>
                       <p>Попробуйте изменить параметры поиска</p>
                     </div>
@@ -1162,63 +1276,123 @@ const AdminAccount = () => {
                 )}
               </div>
             </div>
+
+            <div className="admin-users-pagination">
+              <div className="admin-pagination-info">
+                {filteredUsers.length === 0
+                  ? "Нет пользователей для отображения"
+                  : `Показано ${shownUsersStart}–${shownUsersEnd} из ${filteredUsers.length}`}
+              </div>
+
+              <div className="admin-pagination-controls">
+                <select
+                  className="admin-page-size-select"
+                  value={usersPerPage}
+                  onChange={(e) => changeUsersPerPage(e.target.value)}
+                >
+                  <option value="5">5 на странице</option>
+                  <option value="10">10 на странице</option>
+                  <option value="20">20 на странице</option>
+                  <option value="50">50 на странице</option>
+                </select>
+
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={safeUserPage === 1}
+                  onClick={() => goToUserPage(1)}
+                  title="Первая страница"
+                >
+                  «
+                </button>
+
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={safeUserPage === 1}
+                  onClick={() => goToUserPage(safeUserPage - 1)}
+                  title="Предыдущая страница"
+                >
+                  ‹
+                </button>
+
+                <div className="admin-page-numbers">
+                  {userPageNumbers.map((page, index) => {
+                    const prevPage = userPageNumbers[index - 1];
+                    const showDots = prevPage && page - prevPage > 1;
+
+                    return (
+                      <React.Fragment key={page}>
+                        {showDots && <span className="admin-page-dots">...</span>}
+
+                        <button
+                          type="button"
+                          className={`admin-page-number ${
+                            page === safeUserPage ? "active" : ""
+                          }`}
+                          onClick={() => goToUserPage(page)}
+                        >
+                          {page}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={safeUserPage === totalUserPages}
+                  onClick={() => goToUserPage(safeUserPage + 1)}
+                  title="Следующая страница"
+                >
+                  ›
+                </button>
+
+                <button
+                  type="button"
+                  className="admin-page-btn"
+                  disabled={safeUserPage === totalUserPages}
+                  onClick={() => goToUserPage(totalUserPages)}
+                  title="Последняя страница"
+                >
+                  »
+                </button>
+              </div>
+            </div>
           </div>
-  
+
           <div className="admin-filters-panel" style={{ marginTop: 20 }}>
             <div className="admin-management-header" style={{ marginBottom: 12 }}>
               <div className="admin-header-title">
                 <h1 style={{ fontSize: "1.3rem" }}>
-                  <i className="fas fa-lock"></i> Настройки ролей и прав доступа
+                  Настройки ролей и прав доступа
                 </h1>
-                <p className="admin-header-subtitle">
-                  Права доступа хранятся в базе данных и применяются к ролям
-                  пользователей
-                </p>
               </div>
-  
+
               <div className="admin-header-actions">
                 <button
                   className="admin-action-button admin-action-secondary"
                   onClick={loadRolePermissions}
                   disabled={loadingPermissions}
                 >
-                  <i
-                    className={`fas ${
-                      loadingPermissions ? "fa-spinner fa-spin" : "fa-sync-alt"
-                    }`}
-                  ></i>
-                  Обновить права
+                  {loadingPermissions ? "Обновление..." : "Обновить права"}
                 </button>
               </div>
             </div>
-  
+
             {permissionsError && (
-              <div
-                style={{
-                  marginBottom: 12,
-                  padding: 10,
-                  borderRadius: 10,
-                  background: "rgba(244,67,54,0.15)",
-                  color: "#ffb4b4",
-                }}
-              >
-                <i
-                  className="fas fa-exclamation-circle"
-                  style={{ marginRight: 8 }}
-                ></i>
-                {permissionsError}
-              </div>
+              <div style={errorBoxStyle}>{permissionsError}</div>
             )}
-  
+
             {loadingPermissions ? (
               <div className="admin-table-empty">
                 <div className="admin-empty-state">
-                  <i className="fas fa-spinner fa-spin"></i>
                   <h3>Загрузка прав доступа...</h3>
                 </div>
               </div>
             ) : (
-              <div className="admin-users-table">
+              <div className="admin-users-table admin-permissions-table">
                 <div
                   className="admin-table-header"
                   style={{
@@ -1226,7 +1400,7 @@ const AdminAccount = () => {
                   }}
                 >
                   <div className="admin-table-cell">Право доступа</div>
-  
+
                   {rolesAccess.map((role) => (
                     <div
                       key={role.role_id}
@@ -1237,18 +1411,17 @@ const AdminAccount = () => {
                     </div>
                   ))}
                 </div>
-  
+
                 <div className="admin-table-body">
                   {permissionsList.length === 0 ? (
                     <div className="admin-table-empty">
                       <div className="admin-empty-state">
-                        <i className="fas fa-lock"></i>
                         <h3>Права доступа не найдены</h3>
                         <p>Проверь таблицу permissions в базе данных</p>
                       </div>
                     </div>
                   ) : (
-                    permissionsList.map((permission) => (
+                    paginatedPermissions.map((permission) => (
                       <div
                         key={permission.code}
                         className="admin-table-row"
@@ -1267,7 +1440,7 @@ const AdminAccount = () => {
                             <strong style={{ color: "#e0e0e0" }}>
                               {permission.name}
                             </strong>
-  
+
                             <span
                               style={{
                                 color: "#8fb4d9",
@@ -1276,7 +1449,7 @@ const AdminAccount = () => {
                             >
                               {permission.description || permission.code}
                             </span>
-  
+
                             <span
                               style={{
                                 color: "#607d9a",
@@ -1287,19 +1460,19 @@ const AdminAccount = () => {
                             </span>
                           </div>
                         </div>
-  
+
                         {rolesAccess.map((role) => {
                           const checked = isPermissionChecked(
                             role.role_id,
                             permission.code
                           );
-  
+
                           const disabled =
                             Number(role.role_id) === 1 &&
                             ["users.manage", "roles.manage"].includes(
                               permission.code
                             );
-  
+
                           return (
                             <div
                               key={`${role.role_id}-${permission.code}`}
@@ -1337,7 +1510,7 @@ const AdminAccount = () => {
                                     cursor: disabled ? "not-allowed" : "pointer",
                                   }}
                                 />
-  
+
                                 {checked ? "Да" : "Нет"}
                               </label>
                             </div>
@@ -1347,37 +1520,105 @@ const AdminAccount = () => {
                     ))
                   )}
                 </div>
-  
-                {rolesAccess.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      justifyContent: "flex-end",
-                      flexWrap: "wrap",
-                      padding: "16px",
-                      borderTop: "1px solid rgba(60, 120, 180, 0.2)",
-                    }}
-                  >
-                    {rolesAccess.map((role) => (
-                      <button
-                        key={role.role_id}
-                        className="admin-action-button admin-action-primary"
-                        onClick={() => saveRolePermissions(role.role_id)}
-                        disabled={savingRoleId === role.role_id}
+
+                {permissionsList.length > 0 && (
+                  <div className="admin-users-pagination">
+                    <div className="admin-pagination-info">
+                      Показано {shownPermissionsStart}–{shownPermissionsEnd} из{" "}
+                      {permissionsList.length} прав
+                    </div>
+
+                    <div className="admin-pagination-controls">
+                      <select
+                        className="admin-page-size-select"
+                        value={permissionsPerPage}
+                        onChange={(e) => changePermissionsPerPage(e.target.value)}
                       >
-                        <i
-                          className={`fas ${
-                            savingRoleId === role.role_id
-                              ? "fa-spinner fa-spin"
-                              : "fa-save"
-                          }`}
-                        ></i>
-                        {savingRoleId === role.role_id
-                          ? "Сохранение..."
-                          : `Сохранить: ${getRoleTitle(role)}`}
+                        <option value="5">5 на странице</option>
+                        <option value="10">10 на странице</option>
+                        <option value="20">20 на странице</option>
+                        <option value="50">50 на странице</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        className="admin-page-btn"
+                        disabled={safePermissionPage === 1}
+                        onClick={() => goToPermissionPage(1)}
+                        title="Первая страница"
+                      >
+                        «
                       </button>
-                    ))}
+
+                      <button
+                        type="button"
+                        className="admin-page-btn"
+                        disabled={safePermissionPage === 1}
+                        onClick={() => goToPermissionPage(safePermissionPage - 1)}
+                        title="Предыдущая страница"
+                      >
+                        ‹
+                      </button>
+
+                      <div className="admin-page-numbers">
+                        {permissionPageNumbers.map((page, index) => {
+                          const prevPage = permissionPageNumbers[index - 1];
+                          const showDots = prevPage && page - prevPage > 1;
+
+                          return (
+                            <React.Fragment key={page}>
+                              {showDots && (
+                                <span className="admin-page-dots">...</span>
+                              )}
+
+                              <button
+                                type="button"
+                                className={`admin-page-number ${
+                                  page === safePermissionPage ? "active" : ""
+                                }`}
+                                onClick={() => goToPermissionPage(page)}
+                              >
+                                {page}
+                              </button>
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="admin-page-btn"
+                        disabled={safePermissionPage === totalPermissionPages}
+                        onClick={() => goToPermissionPage(safePermissionPage + 1)}
+                        title="Следующая страница"
+                      >
+                        ›
+                      </button>
+
+                      <button
+                        type="button"
+                        className="admin-page-btn"
+                        disabled={safePermissionPage === totalPermissionPages}
+                        onClick={() => goToPermissionPage(totalPermissionPages)}
+                        title="Последняя страница"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {rolesAccess.length > 0 && (
+                  <div className="admin-permissions-footer">
+                    <button
+                      className="admin-action-button admin-action-primary"
+                      onClick={saveAllRolePermissions}
+                      disabled={savingRoleId === "all"}
+                    >
+                      {savingRoleId === "all"
+                        ? "Сохранение..."
+                        : "Сохранить права доступа"}
+                    </button>
                   </div>
                 )}
               </div>
@@ -1385,170 +1626,142 @@ const AdminAccount = () => {
           </div>
         </div>
       </div>
-  
+
       <div className={`admin-modal-overlay ${userModalOpen ? "show" : ""}`}>
         <div
           className="admin-modal-content"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="admin-modal-header">
-            <h3>
-              <i className="fas fa-user-edit"></i> {modalTitle}
-            </h3>
-  
-            <button
-              className="admin-modal-close"
-              onClick={closeUserModal}
-              disabled={isSaving}
-            >
-              &times;
-            </button>
+            <h3>{modalTitle}</h3>
+
+           
           </div>
-  
+
           <div className="admin-modal-body">
-            {modalError && (
-              <div
+            {modalError && <div style={errorBoxStyle}>{modalError}</div>}
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "1fr 1fr 1fr",
+              }}
+            >
+              <input
+                className="admin-search-input"
+                placeholder="Фамилия"
+                value={formData.lastname}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    lastname: e.target.value,
+                  }))
+                }
+              />
+
+              <input
+                className="admin-search-input"
+                placeholder="Имя"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    name: e.target.value,
+                  }))
+                }
+              />
+
+              <input
+                className="admin-search-input"
+                placeholder="Отчество"
+                value={formData.middlename}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    middlename: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "2fr 1fr",
+                marginTop: 10,
+              }}
+            >
+              <input
+                className="admin-search-input"
+                placeholder="Email *"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    email: e.target.value,
+                  }))
+                }
+              />
+
+              <input
+                className="admin-search-input"
+                placeholder="Телефон"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    phone: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                marginTop: 10,
+              }}
+            >
+              <select
+                className="admin-filter-select"
+                value={formData.role}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    role: e.target.value,
+                  }))
+                }
+              >
+                <option value="Инженер">Инженер</option>
+                <option value="Админ">Администратор</option>
+              </select>
+
+              <label
                 style={{
-                  marginBottom: 12,
-                  padding: 10,
-                  borderRadius: 10,
-                  background: "rgba(244,67,54,0.15)",
-                  color: "#ffb4b4",
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  color: "#b0c4de",
                 }}
               >
-                <i
-                  className="fas fa-exclamation-circle"
-                  style={{ marginRight: 8 }}
-                ></i>
-                {modalError}
-              </div>
-            )}
-  
-            {!isResetMode && (
-              <>
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    gridTemplateColumns: "1fr 1fr 1fr",
-                  }}
-                >
-                  <input
-                    className="admin-search-input"
-                    placeholder="Фамилия"
-                    value={formData.lastname}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        lastname: e.target.value,
-                      }))
-                    }
-                  />
-  
-                  <input
-                    className="admin-search-input"
-                    placeholder="Имя"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        name: e.target.value,
-                      }))
-                    }
-                  />
-  
-                  <input
-                    className="admin-search-input"
-                    placeholder="Отчество"
-                    value={formData.middlename}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        middlename: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-  
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    gridTemplateColumns: "2fr 1fr",
-                    marginTop: 10,
-                  }}
-                >
-                  <input
-                    className="admin-search-input"
-                    placeholder="Email *"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        email: e.target.value,
-                      }))
-                    }
-                  />
-  
-                  <input
-                    className="admin-search-input"
-                    placeholder="Телефон"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        phone: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-  
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    alignItems: "center",
-                    marginTop: 10,
-                  }}
-                >
-                  <select
-                    className="admin-filter-select"
-                    value={formData.role}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        role: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="Инженер">Инженер</option>
-                    <option value="Админ">Администратор</option>
-                  </select>
-  
-                  <label
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "center",
-                      color: "#b0c4de",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={!!formData.is_active}
-                      onChange={(e) =>
-                        setFormData((p) => ({
-                          ...p,
-                          is_active: e.target.checked,
-                        }))
-                      }
-                    />
-                    Активен
-                  </label>
-                </div>
-              </>
-            )}
-  
+                <input
+                  type="checkbox"
+                  checked={!!formData.is_active}
+                  onChange={(e) =>
+                    setFormData((p) => ({
+                      ...p,
+                      is_active: e.target.checked,
+                    }))
+                  }
+                />
+                Активен
+              </label>
+            </div>
+
             <div
               style={{
                 display: "grid",
@@ -1563,8 +1776,6 @@ const AdminAccount = () => {
                 placeholder={
                   modalMode === "create"
                     ? "Пароль *"
-                    : modalMode === "reset"
-                    ? "Новый пароль *"
                     : "Новый пароль (необязательно)"
                 }
                 value={formData.password}
@@ -1575,7 +1786,7 @@ const AdminAccount = () => {
                   }))
                 }
               />
-  
+
               <input
                 className="admin-search-input"
                 type="password"
@@ -1590,70 +1801,41 @@ const AdminAccount = () => {
               />
             </div>
           </div>
-  
+
           <div className="admin-modal-footer">
             <button
               className="admin-modal-button admin-modal-secondary"
               onClick={closeUserModal}
               disabled={isSaving}
             >
-              <i className="fas fa-times"></i> Отмена
+              Отмена
             </button>
-  
+
             <button
               className="admin-modal-button admin-modal-primary"
               onClick={submitUserForm}
               disabled={isSaving}
             >
-              <i
-                className={`fas ${
-                  isSaving ? "fa-spinner fa-spin" : "fa-save"
-                }`}
-              ></i>
               {isSaving ? "Сохранение..." : "Сохранить"}
             </button>
           </div>
         </div>
       </div>
-  
+
       <div className={`admin-modal-overlay ${profileModalOpen ? "show" : ""}`}>
         <div
           className="admin-modal-content"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="admin-modal-header">
-            <h3>
-              <i className="fas fa-user-edit"></i> Обновление профиля
-            </h3>
-  
-            <button
-              className="admin-modal-close"
-              onClick={closeProfileModal}
-              disabled={isSaving}
-            >
-              &times;
-            </button>
+            <h3>Обновление профиля</h3>
+
+            
           </div>
-  
+
           <div className="admin-modal-body">
-            {profileError && (
-              <div
-                style={{
-                  marginBottom: 12,
-                  padding: 10,
-                  borderRadius: 10,
-                  background: "rgba(244,67,54,0.15)",
-                  color: "#ffb4b4",
-                }}
-              >
-                <i
-                  className="fas fa-exclamation-circle"
-                  style={{ marginRight: 8 }}
-                ></i>
-                {profileError}
-              </div>
-            )}
-  
+            {profileError && <div style={errorBoxStyle}>{profileError}</div>}
+
             <div
               style={{
                 display: "grid",
@@ -1672,7 +1854,7 @@ const AdminAccount = () => {
                   }))
                 }
               />
-  
+
               <input
                 className="admin-search-input"
                 placeholder="Имя"
@@ -1684,7 +1866,7 @@ const AdminAccount = () => {
                   }))
                 }
               />
-  
+
               <input
                 className="admin-search-input"
                 placeholder="Отчество"
@@ -1697,7 +1879,7 @@ const AdminAccount = () => {
                 }
               />
             </div>
-  
+
             <div
               style={{
                 display: "grid",
@@ -1717,7 +1899,7 @@ const AdminAccount = () => {
                   }))
                 }
               />
-  
+
               <input
                 className="admin-search-input"
                 placeholder="Телефон"
@@ -1730,7 +1912,7 @@ const AdminAccount = () => {
                 }
               />
             </div>
-  
+
             <div
               style={{
                 display: "grid",
@@ -1751,7 +1933,7 @@ const AdminAccount = () => {
                   }))
                 }
               />
-  
+
               <input
                 className="admin-search-input"
                 type="password"
@@ -1766,137 +1948,145 @@ const AdminAccount = () => {
               />
             </div>
           </div>
-  
+
           <div className="admin-modal-footer">
             <button
               className="admin-modal-button admin-modal-secondary"
               onClick={closeProfileModal}
               disabled={isSaving}
             >
-              <i className="fas fa-times"></i> Отмена
+              Отмена
             </button>
-  
+
             <button
               className="admin-modal-button admin-modal-primary"
               onClick={saveProfile}
               disabled={isSaving}
             >
-              <i
-                className={`fas ${
-                  isSaving ? "fa-spinner fa-spin" : "fa-save"
-                }`}
-              ></i>
               {isSaving ? "Сохранение..." : "Сохранить"}
             </button>
           </div>
         </div>
       </div>
-  
+
       <div className={`admin-modal-overlay ${deleteConfirmOpen ? "show" : ""}`}>
         <div
           className="admin-modal-content admin-modal-small"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="admin-modal-header">
-            <h3>
-              <i className="fas fa-exclamation-triangle"></i> Подтверждение
-              удаления
-            </h3>
-  
-            <button
-              className="admin-modal-close"
-              onClick={closeDeleteModal}
-              disabled={isSaving}
-            >
-              &times;
-            </button>
+            <h3>Подтверждение удаления</h3>
+
+            
           </div>
-  
+
           <div className="admin-modal-body">
             {deleteError && (
-              <div
-                style={{
-                  marginBottom: 12,
-                  padding: 10,
-                  borderRadius: 10,
-                  background: "rgba(244,67,54,0.15)",
-                  color: "#ffb4b4",
-                }}
-              >
-                <i
-                  className="fas fa-exclamation-circle"
-                  style={{ marginRight: 8 }}
-                ></i>
-                {deleteError}
-              </div>
+              <div className="admin-delete-error">{deleteError}</div>
             )}
-  
-            <div style={{ textAlign: "center", padding: "20px" }}>
-              <i
-                className="fas fa-trash-alt"
-                style={{
-                  fontSize: "3rem",
-                  color: "#f44336",
-                  marginBottom: "20px",
-                }}
-              ></i>
-  
-              <h3 style={{ color: "#e0e0e0", marginBottom: "15px" }}>
-                Вы уверены?
+
+            <div className="admin-delete-preview">
+              <div className="admin-delete-icon">
+                {deleteCheck?.can_delete ? "!" : "i"}
+              </div>
+
+              <h3>
+                {deleteCheckLoading
+                  ? "Проверяем возможность удаления..."
+                  : deleteCheck?.can_delete
+                  ? "Удалить пользователя?"
+                  : "Пользователя лучше деактивировать"}
               </h3>
-  
-              <p
-                style={{
-                  color: "#b0c4de",
-                  marginBottom: "25px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Вы собираетесь удалить пользователя:
+
+              <p>
+                Пользователь:
                 <br />
-                <strong style={{ color: "#e0e0e0" }}>
-                  {`${userToDelete?.lastname || ""} ${
-                    userToDelete?.name || ""
-                  } ${userToDelete?.middlename || ""}`.trim() || "Без имени"}
+                <strong>
+                  {`${userToDelete?.lastname || ""} ${userToDelete?.name || ""} ${
+                    userToDelete?.middlename || ""
+                  }`.trim() || "Без имени"}
                 </strong>
                 <br />
-                <span style={{ color: "#8fb4d9" }}>{userToDelete?.email}</span>
+                <span>{userToDelete?.email}</span>
               </p>
-  
-              <div style={{ color: "#ffb4b4", fontSize: "0.9rem" }}>
-                Если пользователь связан с журналом действий, удаление может быть
-                запрещено базой данных. В таком случае лучше деактивировать
-                аккаунт.
-              </div>
+
+              {deleteCheckLoading && (
+                <div className="admin-delete-check-box">
+                  Проверка связей с журналом, сменами и дефектами...
+                </div>
+              )}
+
+              {!deleteCheckLoading && deleteCheck && (
+                <div className="admin-delete-check-box">
+                  <div className="admin-delete-check-title">
+                    {deleteCheck.can_delete
+                      ? "Связанные записи не найдены"
+                      : "Найдены связанные записи"}
+                  </div>
+
+                  <div className="admin-delete-usage-grid">
+                    <div>
+                      <span>Проверки</span>
+                      <strong>{deleteCheck.usage?.inspections_created || 0}</strong>
+                    </div>
+
+                    <div>
+                      <span>Смены</span>
+                      <strong>{deleteCheck.usage?.shifts_started || 0}</strong>
+                    </div>
+
+                    <div>
+                      <span>Решения по дефектам</span>
+                      <strong>{deleteCheck.usage?.defects_confirmed || 0}</strong>
+                    </div>
+                  </div>
+
+                  <p className="admin-delete-note">{deleteCheck.message}</p>
+                </div>
+              )}
+
+              {!deleteCheckLoading && !deleteCheck && (
+                <div className="admin-delete-check-box">
+                  Не удалось выполнить предварительную проверку. Безопаснее не
+                  удалять пользователя, а деактивировать аккаунт.
+                </div>
+              )}
             </div>
           </div>
-  
+
           <div className="admin-modal-footer">
             <button
               className="admin-modal-button admin-modal-secondary"
               onClick={closeDeleteModal}
               disabled={isSaving}
             >
-              <i className="fas fa-times"></i> Отмена
+              Отмена
             </button>
-  
-            <button
-              className="admin-modal-button admin-modal-danger"
-              onClick={deleteUser}
-              disabled={isSaving}
-            >
-              <i
-                className={`fas ${
-                  isSaving ? "fa-spinner fa-spin" : "fa-trash-alt"
-                }`}
-              ></i>
-              {isSaving ? "Удаление..." : "Удалить пользователя"}
-            </button>
+
+            {deleteCheck?.can_deactivate && !deleteCheck?.can_delete && (
+              <button
+                className="admin-modal-button admin-modal-warning"
+                onClick={deactivateUserFromDeleteModal}
+                disabled={isSaving}
+              >
+                {isSaving ? "Деактивация..." : "Деактивировать аккаунт"}
+              </button>
+            )}
+
+            {deleteCheck?.can_delete && (
+              <button
+                className="admin-modal-button admin-modal-danger"
+                onClick={deleteUser}
+                disabled={isSaving}
+              >
+                {isSaving ? "Удаление..." : "Удалить пользователя"}
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
-  };
-  
-  export default AdminAccount;
+};
+
+export default AdminAccount;

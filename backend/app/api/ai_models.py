@@ -25,12 +25,9 @@ def resolve_model_weights_path(weights_path: str) -> Path:
 @router.get("", response_model=List[AiModelPublic])
 def list_ai_models(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("ai_models.view")),
 ):
-    """
-    Возвращает список всех моделей из реестра.
-    Активная модель выводится первой.
-    """
+  
     models = (
         db.query(AiModel)
         .order_by(AiModel.is_active.desc(), AiModel.id.asc())
@@ -45,12 +42,7 @@ def create_ai_model(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("ai_models.manage")),
 ):
-    """
-    Создаёт новую запись об AI-модели в реестре.
-
-    В текущей версии файл весов не загружается через интерфейс.
-    Пользователь указывает путь к уже размещённому файлу весов.
-    """
+   
     existing = (
         db.query(AiModel)
         .filter(AiModel.model_key == data.model_key)
@@ -98,8 +90,6 @@ def create_ai_model(
                 detail="iou_threshold must be in range 0..1",
             )
 
-    # Для моделей, которые можно будет активировать, сразу проверяем файл весов.
-    # Для planned/disabled/error можно оставить запись без реального файла.
     if data.status in {"available", "experimental"}:
         if not data.weights_path:
             raise HTTPException(
@@ -141,11 +131,9 @@ def create_ai_model(
 @router.get("/active", response_model=AiModelPublic)
 def get_active_ai_model(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("ai_models.view")),
 ):
-    """
-    Возвращает текущую активную модель.
-    """
+   
     model = db.query(AiModel).filter(AiModel.is_active == True).first()
 
     if not model:
@@ -160,12 +148,7 @@ def activate_ai_model(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("ai_models.manage")),
 ):
-    """
-    Делает выбранную модель активной.
-
-    Пока разрешаем активировать только модели со status='available'.
-    Например, YOLO со status='planned' нельзя активировать, пока она реально не подключена.
-    """
+   
     model = db.query(AiModel).filter(AiModel.id == model_id).first()
 
     if not model:
@@ -200,10 +183,8 @@ def activate_ai_model(
             detail=f"Model weights file not found: {weights_path}",
         )
 
-    # Делаем все модели неактивными
     db.query(AiModel).update({AiModel.is_active: False})
 
-    # Активируем выбранную
     model.is_active = True
 
     db.commit()
@@ -220,15 +201,7 @@ def update_ai_model_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("ai_models.manage")),
 ):
-    """
-    Обновляет настройки модели:
-    - default_mode;
-    - threshold;
-    - confidence_threshold;
-    - iou_threshold;
-    - status;
-    - description.
-    """
+  
     model = db.query(AiModel).filter(AiModel.id == model_id).first()
 
     if not model:
@@ -265,7 +238,6 @@ def update_ai_model_settings(
 
         model.default_mode = data.default_mode
 
-        # Если для режима есть threshold, автоматически ставим его
         if model.modes and data.default_mode in model.modes:
             mode_value = model.modes[data.default_mode]
 
@@ -325,7 +297,4 @@ def update_ai_model_settings(
 def get_active_model_runtime(
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Возвращает информацию о реально загруженной модели в ai_service.
-    """
     return ai_service.get_active_model_runtime_info()

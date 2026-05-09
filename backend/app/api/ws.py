@@ -1,7 +1,8 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from fastapi import HTTPException
 
-from app.core.security import decode_token
+from app.core.database import SessionLocal
+from app.core.security import get_user_from_token, user_has_permission
 from app.core.ws_manager import shift_ws_manager
 
 
@@ -13,20 +14,27 @@ async def shift_websocket(
     websocket: WebSocket,
     token: str | None = Query(default=None),
 ):
-    # WebSocket не умеет нормально отправлять Authorization header из браузера,
-    # поэтому токен передаём через query-параметр: /ws/shift?token=...
     if not token:
         await websocket.close(code=1008)
         return
 
+    db = SessionLocal()
+
     try:
-        decode_token(token)
+        user = get_user_from_token(db, token)
+
+        if not user_has_permission(db, user, "dashboard.view"):
+            await websocket.close(code=1008)
+            return
+
     except HTTPException:
         await websocket.close(code=1008)
         return
     except Exception:
         await websocket.close(code=1008)
         return
+    finally:
+        db.close()
 
     await shift_ws_manager.connect(websocket)
 
@@ -40,7 +48,6 @@ async def shift_websocket(
         )
 
         while True:
-            # Просто держим соединение открытым.
             await websocket.receive_text()
 
     except WebSocketDisconnect:

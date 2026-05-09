@@ -21,7 +21,6 @@ def main():
     db = SessionLocal()
 
     try:
-        # Сначала снимаем активность со всех моделей
         db.query(AiModel).update({AiModel.is_active: False})
         db.commit()
 

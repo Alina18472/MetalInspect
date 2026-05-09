@@ -1,16 +1,120 @@
-// AccountPage.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import "../styles/account.css";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/Api";
 
+const PROCESSED_STATUSES = new Set(["confirmed", "rejected", "sent_to_mes"]);
+
+const normalizeStatus = (status) => String(status || "").toLowerCase();
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  return String(value).replace("T", " ");
+};
+
+const formatApiError = (e) => {
+  const detail = e?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    const messages = detail.map((item) => item?.msg).filter(Boolean);
+    if (messages.length) return messages.join(", ");
+  }
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string") return detail.message;
+    if (typeof detail.detail === "string") return detail.detail;
+    return JSON.stringify(detail);
+  }
+
+  if (typeof e?.message === "string" && e.message.trim()) {
+    return e.message;
+  }
+
+  return "Ошибка запроса";
+};
+
+const getStatusText = (status) => {
+  const map = {
+    pending: "Ожидает проверки",
+    confirmed: "Подтверждено",
+    rejected: "Отклонено",
+    sent_to_mes: "Передано в MES",
+  };
+
+  const key = normalizeStatus(status);
+  return map[key] || status || "—";
+};
+
+const getStatusClass = (status) => {
+  const map = {
+    pending: "pending",
+    confirmed: "confirmed",
+    rejected: "rejected",
+    sent_to_mes: "sent",
+  };
+
+  const key = normalizeStatus(status);
+  return map[key] || "default";
+};
+
+const getPermissionCode = (permission) => {
+  if (typeof permission === "string") return permission;
+
+  return (
+    permission?.code ||
+    permission?.key ||
+    permission?.permission_code ||
+    permission?.slug ||
+    permission?.name ||
+    ""
+  );
+};
+
+const normalizePermission = (permission, index) => {
+  if (typeof permission === "string") {
+    return {
+      id: permission || index,
+      code: permission,
+      title: permission,
+      description: "",
+    };
+  }
+
+  const code = getPermissionCode(permission);
+
+  return {
+    id: permission?.id || code || index,
+    code,
+    title:
+      permission?.name ||
+      permission?.title ||
+      permission?.display_name ||
+      permission?.label ||
+      code ||
+      "Право доступа",
+    description: permission?.description || "",
+  };
+};
+
 const Account = () => {
-  const { user, loadMe, updateMe } = useAuth();
+  const navigate = useNavigate();
+  const {
+    user,
+    permissions,
+    permissionDetails,
+    hasPermission,
+    loadMe,
+    updateMe,
+  } = useAuth();
 
   const [activity, setActivity] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
-
   const [notification, setNotification] = useState(null);
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -27,9 +131,47 @@ const Account = () => {
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [defectsPage, setDefectsPage] = useState(1);
+  const [defectsPerPage, setDefectsPerPage] = useState(3);
+
+  const showNotification = useCallback((message, type = "info") => {
+    setNotification({
+      message,
+      type,
+      show: true,
+    });
+
+    setTimeout(() => {
+      setNotification((prev) => (prev ? { ...prev, show: false } : null));
+
+      setTimeout(() => {
+        setNotification(null);
+      }, 250);
+    }, 2800);
+  }, []);
+
+  const loadActivity = useCallback(async () => {
+    setActivityLoading(true);
+
+    try {
+      const data = await api.getMyActivity();
+      setActivity(data);
+    } catch (e) {
+      showNotification(
+        formatApiError(e) || "Не удалось загрузить активность пользователя",
+        "error"
+      );
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [showNotification]);
+
   useEffect(() => {
     document.body.classList.add("account-page");
-    return () => document.body.classList.remove("account-page");
+
+    return () => {
+      document.body.classList.remove("account-page");
+    };
   }, []);
 
   useEffect(() => {
@@ -40,7 +182,7 @@ const Account = () => {
 
   useEffect(() => {
     loadActivity();
-  }, []);
+  }, [loadActivity]);
 
   useEffect(() => {
     if (!user) return;
@@ -58,58 +200,44 @@ const Account = () => {
     setFormError("");
   }, [user, profileModalOpen]);
 
-  const showNotification = (message, type = "info") => {
-    setNotification({ message, type, show: true });
-
-    setTimeout(() => {
-      setNotification((prev) => (prev ? { ...prev, show: false } : null));
-      setTimeout(() => setNotification(null), 300);
-    }, 3000);
-  };
-
-  const loadActivity = async () => {
-    setActivityLoading(true);
-
-    try {
-      const data = await api.getMyActivity();
-      setActivity(data);
-    } catch (e) {
-      showNotification(
-        e?.message || "Не удалось загрузить активность пользователя",
-        "error"
-      );
-    } finally {
-      setActivityLoading(false);
-    }
-  };
-
   const profile = useMemo(() => {
     const last = user?.last_name || "";
     const first = user?.first_name || "";
-    const pat = user?.patronymic || "";
+    const patronymic = user?.patronymic || "";
 
     const fullName =
-      `${last} ${first} ${pat}`.trim() || user?.email || "Пользователь";
+      `${last} ${first} ${patronymic}`.trim() ||
+      user?.email ||
+      "Пользователь";
 
     const shortName =
       last && first
-        ? `${last} ${first[0]}.${pat ? `${pat[0]}.` : ""}`
+        ? `${last} ${first[0]}.${patronymic ? `${patronymic[0]}.` : ""}`
         : fullName;
 
+    const initials =
+      `${last?.[0] || ""}${first?.[0] || ""}`.trim().toUpperCase() ||
+      String(user?.email || "П").charAt(0).toUpperCase();
+
     const roleText =
-      Number(user?.role_id) === 1
+      user?.role_name ||
+      user?.role?.name ||
+      (Number(user?.role_id) === 1
         ? "Администратор"
         : Number(user?.role_id) === 2
         ? "Инженер"
-        : "Пользователь";
+        : "Пользователь");
+
+    const isActive = user?.is_active ?? true;
 
     return {
       name: fullName,
       shortName,
+      initials,
       role: roleText,
       email: user?.email || "",
       phone: user?.phone || "",
-      is_active: user?.is_active ?? true,
+      is_active: isActive,
       employeeId: `#${user?.id ?? "—"}`,
     };
   }, [user]);
@@ -128,88 +256,199 @@ const Account = () => {
   const falseAlarmRate = Number(activitySummary.false_alarm_rate || 0);
   const lastActivityAt = activitySummary.last_activity_at || null;
 
-  const recentEvents = activity?.recent_events || [];
+  const rawPermissions = useMemo(() => {
+    if (Array.isArray(permissionDetails) && permissionDetails.length > 0) {
+      return permissionDetails;
+    }
+  
+    if (Array.isArray(permissions)) return permissions;
+    if (Array.isArray(user?.permissions)) return user.permissions;
+    if (Array.isArray(user?.role?.permissions)) return user.role.permissions;
+  
+    return [];
+  }, [permissionDetails, permissions, user]);
 
-  const formatDateTime = (value) => {
-    if (!value) return "—";
-    return value.replace("T", " ");
+  const allowedPermissions = useMemo(() => {
+    return rawPermissions.map((permission, index) =>
+      normalizePermission(permission, index)
+    );
+  }, [rawPermissions]);
+
+  const permissionCodes = useMemo(() => {
+    return allowedPermissions
+      .map((permission) => permission.code)
+      .filter(Boolean);
+  }, [allowedPermissions]);
+
+  const permissionsTotal = allowedPermissions.length;
+
+  const activityEventsSource = useMemo(() => {
+    const source =
+      activity?.processed_events ||
+      activity?.reviewed_events ||
+      activity?.defects ||
+      activity?.recent_events ||
+      [];
+
+    return Array.isArray(source) ? source : [];
+  }, [activity]);
+
+  const processedDefects = useMemo(() => {
+    return activityEventsSource
+      .filter((event) => PROCESSED_STATUSES.has(normalizeStatus(event.status)))
+      .sort((a, b) => {
+        const dateA = new Date(a.time || a.created_at || 0).getTime();
+        const dateB = new Date(b.time || b.created_at || 0).getTime();
+
+        return dateB - dateA;
+      });
+  }, [activityEventsSource]);
+
+  const sentToMesTotal = processedDefects.filter(
+    (event) => normalizeStatus(event.status) === "sent_to_mes"
+  ).length;
+
+  const summaryTiles = [
+    {
+      title: "Слитков сегодня",
+      value: inspectionsToday,
+      hint: `Всего обработано: ${inspectionsTotal}`,
+      type: "primary",
+    },
+    {
+      title: "Решений сегодня",
+      value: reviewedToday,
+      hint: `Всего решений: ${reviewedTotal}`,
+      type: "success",
+    },
+    {
+      title: "Подтверждено",
+      value: confirmedTotal,
+      hint: "Реальные дефекты",
+      type: "danger",
+    },
+    {
+      title: "Отклонено",
+      value: rejectedTotal,
+      hint: `${falseAlarmRate.toFixed(1)}% от рассмотренных`,
+      type: "warning",
+    },
+    {
+      title: "Передано в MES",
+      value: sentToMesTotal,
+      hint: "Подтверждённые события",
+      type: "success",
+    },
+  ];
+
+  const totalDefectPages = Math.max(
+    Math.ceil(processedDefects.length / defectsPerPage),
+    1
+  );
+
+  const safeDefectsPage = Math.min(defectsPage, totalDefectPages);
+
+  const defectsStartIndex = (safeDefectsPage - 1) * defectsPerPage;
+  const defectsEndIndex = defectsStartIndex + defectsPerPage;
+
+  const paginatedDefects = processedDefects.slice(
+    defectsStartIndex,
+    defectsEndIndex
+  );
+
+  const shownDefectsStart =
+    processedDefects.length > 0 ? defectsStartIndex + 1 : 0;
+
+  const shownDefectsEnd = Math.min(defectsEndIndex, processedDefects.length);
+
+  const defectPageNumbers = Array.from(
+    { length: totalDefectPages },
+    (_, index) => index + 1
+  ).filter((page) => {
+    return (
+      page === 1 ||
+      page === totalDefectPages ||
+      Math.abs(page - safeDefectsPage) <= 2
+    );
+  });
+
+  useEffect(() => {
+    setDefectsPage(1);
+  }, [processedDefects.length]);
+
+  const goToDefectsPage = (page) => {
+    const normalizedPage = Math.min(Math.max(page, 1), totalDefectPages);
+    setDefectsPage(normalizedPage);
   };
 
-  const getStatusText = (status) => {
-    const map = {
-      pending: "Ожидает проверки",
-      confirmed: "Подтверждено",
-      rejected: "Отклонено",
-      sent_to_mes: "Передано в MES",
-    };
-
-    return map[status] || status || "—";
+  const changeDefectsPerPage = (value) => {
+    setDefectsPerPage(Number(value));
+    setDefectsPage(1);
   };
 
-  const getStatusColor = (status) => {
-    if (status === "confirmed") return "#f44336";
-    if (status === "rejected") return "#ff9800";
-    if (status === "sent_to_mes") return "#4CAF50";
-    return "#8fb4d9";
+  const validateProfile = () => {
+    const email = (edit.email || "").trim();
+    const pass = edit.password || "";
+    const confirmPassword = edit.confirmPassword || "";
+
+    if (!email) {
+      return "Email обязателен";
+    }
+
+    if (pass || confirmPassword) {
+      if (pass.length < 6) {
+        return "Пароль должен быть не короче 6 символов";
+      }
+
+      if (!confirmPassword) {
+        return "Подтвердите пароль";
+      }
+
+      if (pass !== confirmPassword) {
+        return "Пароли не совпадают";
+      }
+    }
+
+    return "";
   };
 
   const saveProfile = async () => {
     if (saving) return;
 
-    setFormError("");
+    const validationError = validateProfile();
 
-    const email = (edit.email || "").trim();
-    const phone = (edit.phone || "").trim();
-    const last_name = (edit.last_name || "").trim();
-    const first_name = (edit.first_name || "").trim();
-    const patronymic = (edit.patronymic || "").trim();
-
-    const pass = edit.password || "";
-    const conf = edit.confirmPassword || "";
-
-    if (!email) {
-      setFormError("Email обязателен");
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
-    if (pass || conf) {
-      if (pass.length < 6) {
-        setFormError("Пароль должен быть не короче 6 символов");
-        return;
-      }
-
-      if (pass !== conf) {
-        setFormError("Пароли не совпадают");
-        return;
-      }
-    }
-
-    const payload = {
-      email,
-      phone: phone || null,
-      last_name: last_name || null,
-      first_name: first_name || null,
-      patronymic: patronymic || null,
-    };
-
-    if (pass) {
-      payload.password = pass;
-    }
-
+    setFormError("");
     setSaving(true);
 
-    try {
-      const res = await updateMe(payload);
+    const payload = {
+      email: (edit.email || "").trim(),
+      phone: (edit.phone || "").trim() || null,
+      last_name: (edit.last_name || "").trim() || null,
+      first_name: (edit.first_name || "").trim() || null,
+      patronymic: (edit.patronymic || "").trim() || null,
+    };
 
-      if (!res?.ok) {
-        setFormError(res?.error || "Не удалось сохранить профиль");
+    if (edit.password) {
+      payload.password = edit.password;
+    }
+
+    try {
+      const result = await updateMe(payload);
+
+      if (!result?.ok) {
+        setFormError(result?.error || "Не удалось сохранить профиль");
         return;
       }
 
       showNotification("Профиль обновлён", "success");
       setProfileModalOpen(false);
     } catch (e) {
-      setFormError(e?.message || "Ошибка сохранения профиля");
+      setFormError(formatApiError(e) || "Ошибка сохранения профиля");
     } finally {
       setSaving(false);
     }
@@ -217,17 +456,31 @@ const Account = () => {
 
   const closeProfileModal = () => {
     if (saving) return;
+
     setProfileModalOpen(false);
     setFormError("");
   };
 
+  const openJournal = () => {
+    const canViewJournal =
+      typeof hasPermission === "function"
+        ? hasPermission("journal.view")
+        : permissionCodes.includes("journal.view");
+
+    if (!canViewJournal) {
+      showNotification("У вас нет права на просмотр журнала событий", "error");
+      return;
+    }
+
+    navigate("/journal");
+  };
+
   if (!user) {
     return (
-      <div
-        className="account-container"
-        style={{ padding: 24, color: "#b0c4de" }}
-      >
-        Загрузка профиля...
+      <div className="account-container">
+        <div className="account-loading-state">
+          <span>Загрузка профиля...</span>
+        </div>
       </div>
     );
   }
@@ -240,35 +493,29 @@ const Account = () => {
             notification.show ? "show" : ""
           }`}
         >
-          <i
-            className={`fas ${
-              notification.type === "success"
-                ? "fa-check-circle"
-                : notification.type === "error"
-                ? "fa-exclamation-circle"
-                : "fa-info-circle"
-            }`}
-          ></i>
           <div className="account-notification-message">
             {notification.message}
           </div>
         </div>
       )}
 
-      <TopNav
-        subtitle="Система распознавания трещин в слитках • Личный кабинет"
-        userName={profile.name}
-        userRole={profile.role}
-      />
+      <div className="account-topnav-shell">
+        <TopNav
+          subtitle="Система распознавания трещин в слитках - Аккаунт"
+          userName={profile.name}
+          userRole={profile.role}
+        />
+      </div>
 
-      <div className="account-main-content">
-        <div className="account-profile-sidebar">
+      <main className="account-main-content">
+        <section className="account-profile-panel">
           <div className="account-profile-card">
             <div className="account-profile-header">
               <div className="account-avatar-wrapper">
                 <div className="account-profile-avatar">
-                  <i className="fas fa-user-tie"></i>
+                  <span>{profile.initials}</span>
                 </div>
+
                 <div
                   className={`account-status-indicator ${
                     profile.is_active
@@ -280,6 +527,7 @@ const Account = () => {
 
               <div className="account-profile-name">{profile.shortName}</div>
               <div className="account-profile-role">{profile.role}</div>
+
               <div className="account-profile-status">
                 {profile.is_active ? "Аккаунт активен" : "Аккаунт неактивен"}
               </div>
@@ -288,17 +536,13 @@ const Account = () => {
             <div className="account-profile-details">
               <div className="account-detail-row">
                 <div className="account-detail-label">
-                  <i className="fas fa-id-badge"></i>
-                  <span>ID:</span>
+                  <span>ID инженера:</span>
                 </div>
-                <div className="account-detail-value">
-                  {profile.employeeId}
-                </div>
+                <div className="account-detail-value">{profile.employeeId}</div>
               </div>
 
               <div className="account-detail-row">
                 <div className="account-detail-label">
-                  <i className="fas fa-envelope"></i>
                   <span>Email:</span>
                 </div>
                 <div className="account-detail-value">
@@ -308,7 +552,6 @@ const Account = () => {
 
               <div className="account-detail-row">
                 <div className="account-detail-label">
-                  <i className="fas fa-phone"></i>
                   <span>Телефон:</span>
                 </div>
                 <div className="account-detail-value">
@@ -318,15 +561,6 @@ const Account = () => {
 
               <div className="account-detail-row">
                 <div className="account-detail-label">
-                  <i className="fas fa-user-shield"></i>
-                  <span>Роль:</span>
-                </div>
-                <div className="account-detail-value">{profile.role}</div>
-              </div>
-
-              <div className="account-detail-row">
-                <div className="account-detail-label">
-                  <i className="fas fa-clock"></i>
                   <span>Последняя активность:</span>
                 </div>
                 <div className="account-detail-value">
@@ -334,271 +568,319 @@ const Account = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: 14, display: "flex" }}>
+              <div style={{ marginTop: 14 }}>
                 <button
                   className="account-modal-button account-modal-primary"
                   style={{ width: "100%" }}
                   onClick={() => setProfileModalOpen(true)}
                 >
-                  <i className="fas fa-user-edit"></i>
                   Обновить профиль
                 </button>
               </div>
+            </div>
+          </div>
+        </section>
 
-              <div style={{ marginTop: 10, display: "flex" }}>
+        <section className="account-content-panel">
+          <div className="account-page-heading account-page-heading-compact">
+            <div>
+              <h1>Личный кабинет инженера</h1>
+              <p>
+                Сводка по обработанным дефектам, активности и доступным функциям
+                системы.
+              </p>
+            </div>
+
+            <div className="account-heading-actions">
+              <button
+                type="button"
+                className="account-heading-refresh"
+                onClick={loadActivity}
+                disabled={activityLoading}
+              >
+                {activityLoading ? "Обновление..." : "Обновить"}
+              </button>
+            </div>
+          </div>
+
+          <div className="account-workspace-grid">
+            <section className="account-section account-defects-section">
+              <div className="account-section-header">
+                <div>
+                  <h2>Обработанные дефекты</h2>
+                  <p>
+                    Подтверждённые, отклонённые и переданные в MES события
+                  </p>
+                </div>
+
                 <button
-                  className="account-modal-button account-modal-secondary"
-                  style={{ width: "100%" }}
-                  onClick={loadActivity}
-                  disabled={activityLoading}
+                  type="button"
+                  className="account-section-link"
+                  onClick={openJournal}
                 >
-                  <i
-                    className={`fas ${
-                      activityLoading ? "fa-spinner fa-spin" : "fa-sync-alt"
-                    }`}
-                  ></i>
-                  {activityLoading ? "Обновление..." : "Обновить активность"}
+                  Открыть журнал
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="account-dashboard-main">
-          <div className="account-welcome-panel">
-            <div className="account-welcome-header">
-              <div className="account-welcome-title">
-                <i className="fas fa-hand-sparkles"></i>
-                Добро пожаловать, {user?.first_name || "сотрудник"}!
-              </div>
-
-              <div className="account-welcome-message">
-                Сегодня в ваших сменах обработано {inspectionsToday} слитков.
-                Вы рассмотрели {reviewedToday} дефектных событий.
-              </div>
-            </div>
-
-            <div className="account-welcome-stats">
-              <div className="account-welcome-stat">
-                <div className="account-stat-number">{inspectionsToday}</div>
-                <div className="account-stat-text">Слитков сегодня</div>
-              </div>
-
-              <div className="account-welcome-stat">
-                <div className="account-stat-number">{reviewedToday}</div>
-                <div className="account-stat-text">
-                  Событий рассмотрено сегодня
-                </div>
-              </div>
-
-              <div className="account-welcome-stat">
-                <div className="account-stat-number">{confirmedTotal}</div>
-                <div className="account-stat-text">Дефектов подтверждено</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="account-dashboard-sections">
-            <div className="account-dashboard-section">
-              <div className="account-section-header">
-                <h2>
-                  <i className="fas fa-chart-line"></i> Моя активность
-                </h2>
-                <a
-                  href="#"
-                  className="account-section-link"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    loadActivity();
-                  }}
-                >
-                  Обновить →
-                </a>
-              </div>
 
               <div className="account-section-content">
-                <div className="account-personal-stats">
-                  <div className="account-personal-stat">
-                    <div className="account-personal-value">
-                      {inspectionsTotal.toLocaleString()}
-                    </div>
-                    <div className="account-personal-label">
-                      Слитков обработано в моих сменах
-                    </div>
-                    <div className="account-personal-trend account-trend-up">
-                      <i className="fas fa-industry"></i>
-                      {inspectionsToday} сегодня
-                    </div>
+                <div className="account-defects-toolbar">
+                  <div className="account-defects-count">
+                    Всего обработанных дефектов:{" "}
+                    <strong>{processedDefects.length}</strong>
                   </div>
 
-                  <div className="account-personal-stat">
-                    <div className="account-personal-value">
-                      {reviewedTotal}
-                    </div>
-                    <div className="account-personal-label">
-                      Дефектных событий рассмотрено
-                    </div>
-                    <div className="account-personal-trend account-trend-up">
-                      <i className="fas fa-clipboard-check"></i>
-                      {reviewedToday} сегодня
-                    </div>
-                  </div>
-
-                  <div className="account-personal-stat">
-                    <div className="account-personal-value">
-                      {confirmedTotal}
-                    </div>
-                    <div className="account-personal-label">
-                      Подтверждено дефектов
-                    </div>
-                    <div className="account-personal-trend account-trend-up">
-                      <i className="fas fa-check-circle"></i>
-                      Решение инженера
-                    </div>
-                  </div>
-
-                  <div className="account-personal-stat">
-                    <div className="account-personal-value">
-                      {rejectedTotal}
-                    </div>
-                    <div className="account-personal-label">
-                      Отклонено срабатываний
-                    </div>
-                    <div className="account-personal-trend account-trend-down">
-                      <i className="fas fa-times-circle"></i>
-                      {falseAlarmRate.toFixed(1)}% от рассмотренных
-                    </div>
-                  </div>
+                  <select
+                    className="account-page-size-select"
+                    value={defectsPerPage}
+                    onChange={(e) => changeDefectsPerPage(e.target.value)}
+                    disabled={processedDefects.length === 0}
+                  >
+                    <option value="3">3 на странице</option>
+                    <option value="5">5 на странице</option>
+                    <option value="10">10 на странице</option>
+                    <option value="20">20 на странице</option>
+                  </select>
                 </div>
-              </div>
-            </div>
 
-            <div className="account-dashboard-section">
-              <div className="account-section-header">
-                <h2>
-                  <i className="fas fa-history"></i> Последние обработанные
-                  дефекты
-                </h2>
-                <a
-                  href="/journal"
-                  className="account-section-link"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.location.href = "/journal";
-                  }}
-                >
-                  Журнал →
-                </a>
-              </div>
-
-              <div className="account-section-content">
                 {activityLoading ? (
                   <div className="account-empty-state">
-                    <i className="fas fa-spinner fa-spin"></i>
-                    Загрузка активности...
+                    <span>Загрузка обработанных дефектов...</span>
                   </div>
-                ) : recentEvents.length === 0 ? (
+                ) : processedDefects.length === 0 ? (
                   <div className="account-empty-state">
-                    <i className="fas fa-inbox"></i>
-                    Вы пока не подтверждали и не отклоняли дефектные события.
+                    <span>
+                      Пока нет дефектов, которые были подтверждены, отклонены
+                      или переданы в MES.
+                    </span>
                   </div>
                 ) : (
-                  <div className="account-tasks-list">
-                    {recentEvents.map((event) => (
+                  <>
+                    <div className="account-defects-table">
+                      <div className="account-defects-table-head">
+                        <div>Дефект</div>
+                        <div>Статус</div>
+                        <div>Время</div>
+                        <div>AI / модель</div>
+                        <div>Комментарий</div>
+                      </div>
+
+                      <div className="account-defects-table-body">
+                        {paginatedDefects.map((event, index) => (
+                          <article
+                            key={`${event.defect_id || event.id || index}-${
+                              event.time || event.created_at || index
+                            }`}
+                            className="account-defect-row"
+                          >
+                            <div className="account-defect-main-cell">
+                              <strong>
+                                {event.ingot_id ||
+                                  event.source_ingot_id ||
+                                  "—"}
+                              </strong>
+
+                              <span>
+                                ID дефекта:{" "}
+                                {event.defect_id || event.id || "—"}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span
+                                className={`account-event-status ${getStatusClass(
+                                  event.status
+                                )}`}
+                              >
+                                {getStatusText(event.status)}
+                              </span>
+                            </div>
+
+                            <div className="account-defect-muted">
+                              {formatDateTime(event.time || event.created_at)}
+                            </div>
+
+                            <div className="account-defect-ai">
+                              <strong>
+                                {event.ai_model_name ||
+                                  event.ai_model_key ||
+                                  "—"}
+                              </strong>
+
+                              <span>
+                                max_p=
+                                {Number(
+                                  event.max_p_crack || event.confidence || 0
+                                ).toFixed(3)}
+                              </span>
+
+                              <span>
+                                threshold=
+                                {Number(event.threshold || 0).toFixed(3)}
+                              </span>
+                            </div>
+
+                            <div className="account-defect-comment">
+                              {event.comment || "Комментарий отсутствует"}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="account-defects-pagination">
+                      <div className="account-pagination-info">
+                        Показано {shownDefectsStart}–{shownDefectsEnd} из{" "}
+                        {processedDefects.length}
+                      </div>
+
+                      <div className="account-pagination-controls">
+                        <button
+                          type="button"
+                          className="account-page-btn"
+                          disabled={safeDefectsPage === 1}
+                          onClick={() => goToDefectsPage(1)}
+                        >
+                          «
+                        </button>
+
+                        <button
+                          type="button"
+                          className="account-page-btn"
+                          disabled={safeDefectsPage === 1}
+                          onClick={() => goToDefectsPage(safeDefectsPage - 1)}
+                        >
+                          ‹
+                        </button>
+
+                        <div className="account-page-numbers">
+                          {defectPageNumbers.map((page, index) => {
+                            const prevPage = defectPageNumbers[index - 1];
+                            const showDots =
+                              prevPage && page - prevPage > 1;
+
+                            return (
+                              <React.Fragment key={page}>
+                                {showDots && (
+                                  <span className="account-page-dots">
+                                    ...
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  className={`account-page-number ${
+                                    page === safeDefectsPage ? "active" : ""
+                                  }`}
+                                  onClick={() => goToDefectsPage(page)}
+                                >
+                                  {page}
+                                </button>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="account-page-btn"
+                          disabled={safeDefectsPage === totalDefectPages}
+                          onClick={() => goToDefectsPage(safeDefectsPage + 1)}
+                        >
+                          ›
+                        </button>
+
+                        <button
+                          type="button"
+                          className="account-page-btn"
+                          disabled={safeDefectsPage === totalDefectPages}
+                          onClick={() => goToDefectsPage(totalDefectPages)}
+                        >
+                          »
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+
+            <section className="account-section account-summary-section">
+              <div className="account-section-header">
+                <div>
+                  <h2>Личная статистика</h2>
+                  <p>Ключевые показатели активности инженера</p>
+                </div>
+              </div>
+
+              <div className="account-section-content">
+                <div className="account-summary-grid">
+                  {summaryTiles.map((item) => (
+                    <SummaryTile
+                      key={item.title}
+                      title={item.title}
+                      value={item.value}
+                      hint={item.hint}
+                      type={item.type}
+                    />
+                  ))}
+                </div>
+
+                <div className="account-summary-footer">
+                  <div className="account-last-activity-line">
+                    <span>Последняя активность</span>
+                    <strong>{formatDateTime(lastActivityAt)}</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="account-section account-permissions-section">
+              <div className="account-section-header">
+                <div>
+                  <h2>Права доступа</h2>
+                  <p>Права, назначенные текущему пользователю</p>
+                </div>
+              </div>
+
+              <div className="account-section-content">
+                <div className="account-permissions-headline">
+                  <div className="account-permissions-score">
+                    <strong>{permissionsTotal}</strong>
+                    <span>прав доступно</span>
+                  </div>
+                </div>
+
+                {allowedPermissions.length === 0 ? (
+                  <div className="account-empty-state compact">
+                    <span>Для пользователя пока не назначены права доступа.</span>
+                  </div>
+                ) : (
+                  <div className="account-permissions-list-compact">
+                    {allowedPermissions.map((item, index) => (
                       <div
-                        key={event.defect_id}
-                        className={`account-task-item ${
-                          event.status === "confirmed"
-                            ? "account-task-high"
-                            : "account-task-medium"
-                        }`}
+                        key={`${item.id}-${index}`}
+                        className="account-permission-mini no-icon"
                       >
-                        <div className="account-task-header">
-                          <div className="account-task-title">
-                            {event.ingot_id || "Слиток не указан"}
-                          </div>
+                        <div className="account-permission-mini-text">
+                          <strong>{item.title}</strong>
+                          {item.description && <span>{item.description}</span>}
 
-                          <div
-                            className="account-task-priority"
-                            style={{ color: getStatusColor(event.status) }}
-                          >
-                            {getStatusText(event.status)}
-                          </div>
-                        </div>
-
-                        <div className="account-task-description">
-                          {event.comment || "Комментарий не указан"}
-                        </div>
-
-                        <div className="account-task-footer">
-                          <div className="account-task-date">
-                            <i className="fas fa-clock"></i>
-                            {formatDateTime(event.time)}
-                          </div>
-
-                          <div
-                            style={{
-                              color: "#8fb4d9",
-                              fontSize: "0.9rem",
-                              lineHeight: "1.5",
-                            }}
-                          >
-                            max_p_crack=
-                            {Number(event.max_p_crack || 0).toFixed(3)} •{" "}
-                            threshold=
-                            {Number(event.threshold || 0).toFixed(3)}
-                            <br />
-                            Модель:{" "}
-                            {event.ai_model_name ||
-                              event.ai_model_key ||
-                              "не указана"}
-                          </div>
+                          {item.code && item.code !== item.title && (
+                            <code className="account-permission-code-text">{item.code}</code>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-            </div>
-
-            <div className="account-dashboard-section">
-              <div className="account-section-header">
-                <h2>
-                  <i className="fas fa-user-shield"></i> Роль в системе
-                </h2>
-              </div>
-
-              <div className="account-section-content">
-                <div
-                  style={{
-                    color: "#b0c4de",
-                    lineHeight: "1.7",
-                    fontSize: "0.95rem",
-                  }}
-                >
-                  <p>
-                    Пользователь с ролью <strong>{profile.role}</strong> может
-                    работать с главным экраном оператора, запускать имитацию
-                    камеры и смены, просматривать журнал проверок и принимать
-                    решение по дефектным событиям.
-                  </p>
-
-                  <p style={{ marginTop: 10 }}>
-                    Подтверждение или отклонение дефекта фиксируется в журнале,
-                    сохраняется в базе данных и связывается с пользователем,
-                    который выполнил проверку.
-                  </p>
-                </div>
-              </div>
-            </div>
+            </section>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
 
       <div
-        className={`account-modal-overlay ${
-          profileModalOpen ? "show" : ""
-        }`}
+        className={`account-modal-overlay ${profileModalOpen ? "show" : ""}`}
         onClick={closeProfileModal}
       >
         <div
@@ -606,43 +888,24 @@ const Account = () => {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="account-modal-header">
-            <h3>
-              <i className="fas fa-user-edit"></i> Обновление профиля
-            </h3>
+            <h3>Обновление профиля</h3>
 
-            <button
-              className="account-modal-close"
-              onClick={closeProfileModal}
-              disabled={saving}
-            >
-              &times;
-            </button>
+            
           </div>
 
           <div className="account-modal-body">
-            {formError && (
-              <div className="account-form-error" style={{ marginBottom: 14 }}>
-                <i
-                  className="fas fa-exclamation-circle"
-                  style={{ marginRight: 8 }}
-                ></i>
-                {formError}
-              </div>
-            )}
+            {formError && <div className="account-form-error">{formError}</div>}
 
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                gridTemplateColumns: "1fr 1fr 1fr",
-              }}
-            >
+            <div className="account-form-grid three">
               <input
                 className="account-input"
                 placeholder="Фамилия"
                 value={edit.last_name}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, last_name: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    last_name: e.target.value,
+                  }))
                 }
                 autoComplete="family-name"
               />
@@ -652,7 +915,10 @@ const Account = () => {
                 placeholder="Имя"
                 value={edit.first_name}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, first_name: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    first_name: e.target.value,
+                  }))
                 }
                 autoComplete="given-name"
               />
@@ -662,26 +928,25 @@ const Account = () => {
                 placeholder="Отчество"
                 value={edit.patronymic}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, patronymic: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    patronymic: e.target.value,
+                  }))
                 }
                 autoComplete="additional-name"
               />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                gridTemplateColumns: "2fr 1fr",
-                marginTop: 12,
-              }}
-            >
+            <div className="account-form-grid two">
               <input
                 className="account-input"
                 placeholder="Email *"
                 value={edit.email}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, email: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    email: e.target.value,
+                  }))
                 }
                 autoComplete="email"
                 inputMode="email"
@@ -692,28 +957,27 @@ const Account = () => {
                 placeholder="Телефон"
                 value={edit.phone}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, phone: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    phone: e.target.value,
+                  }))
                 }
                 autoComplete="tel"
                 inputMode="tel"
               />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                gridTemplateColumns: "1fr 1fr",
-                marginTop: 12,
-              }}
-            >
+            <div className="account-form-grid two">
               <input
                 className="account-input"
                 type="password"
-                placeholder="Новый пароль (необязательно)"
+                placeholder="Новый пароль"
                 value={edit.password}
                 onChange={(e) =>
-                  setEdit((p) => ({ ...p, password: e.target.value }))
+                  setEdit((prev) => ({
+                    ...prev,
+                    password: e.target.value,
+                  }))
                 }
                 autoComplete="new-password"
               />
@@ -724,8 +988,8 @@ const Account = () => {
                 placeholder="Подтвердите пароль"
                 value={edit.confirmPassword}
                 onChange={(e) =>
-                  setEdit((p) => ({
-                    ...p,
+                  setEdit((prev) => ({
+                    ...prev,
                     confirmPassword: e.target.value,
                   }))
                 }
@@ -733,32 +997,28 @@ const Account = () => {
               />
             </div>
 
-            <div
-              style={{
-                marginTop: 10,
-                color: "#8fb4d9",
-                fontSize: "0.9rem",
-              }}
-            >
-              Пароль менять необязательно — оставь поля пустыми.
+            <div className="account-form-hint">
+              Пароль менять необязательно. Для сохранения текущего пароля
+              оставьте оба поля пустыми.
             </div>
           </div>
 
           <div className="account-modal-footer">
             <button
+              type="button"
               className="account-modal-button account-modal-secondary"
               onClick={closeProfileModal}
               disabled={saving}
             >
-              <i className="fas fa-times"></i> Отмена
+              Отмена
             </button>
 
             <button
+              type="button"
               className="account-modal-button account-modal-primary"
               onClick={saveProfile}
               disabled={saving}
             >
-              <i className={`fas ${saving ? "fa-spinner fa-spin" : "fa-save"}`}></i>
               {saving ? "Сохранение..." : "Сохранить"}
             </button>
           </div>
@@ -767,5 +1027,17 @@ const Account = () => {
     </div>
   );
 };
+
+function SummaryTile({ title, value, hint, type = "primary" }) {
+  return (
+    <div className={`account-summary-tile ${type}`}>
+      <div className="account-summary-tile-text">
+        <span>{title}</span>
+        <strong>{value}</strong>
+        <small>{hint}</small>
+      </div>
+    </div>
+  );
+}
 
 export default Account;

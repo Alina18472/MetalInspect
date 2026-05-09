@@ -1,4 +1,3 @@
-# app/schemas/auth.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
@@ -13,10 +12,10 @@ class UserPublic(BaseModel):
     phone: Optional[str] = None
 
     role_id: int
-    role_name: Optional[str] = None  # если нужно отображать "Админ/Инженер"
+    role_name: Optional[str] = None  
 
     class Config:
-        from_attributes = True  # pydantic v2 (если v1 — ниже напишу)
+        from_attributes = True  
 
 class LoginRequest(BaseModel):
     email: EmailStr

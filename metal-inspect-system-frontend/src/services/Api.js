@@ -1,4 +1,3 @@
-//Api.js
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";
 
 function getToken() {
@@ -22,10 +21,8 @@ async function request(path, { method = "GET", body, auth = true, headers = {} }
     body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
   });
 
-  // ✅ 204 No Content: ничего не парсим
   if (res.status === 204) return null;
 
-  // ✅ читаем как text, и только потом решаем — JSON или нет
   const raw = await res.text();
   const contentType = (res.headers.get("content-type") || "").toLowerCase();
 
@@ -34,11 +31,9 @@ async function request(path, { method = "GET", body, auth = true, headers = {} }
     try {
       data = JSON.parse(raw);
     } catch {
-      // если сервер по ошибке прислал пустое/битое json-тело — не падаем
       data = raw;
     }
   } else if (!raw) {
-    // пустое тело даже при 200/201 (бывает)
     data = null;
   }
 
@@ -87,7 +82,6 @@ export const api = {
 
   getMe: () => request("/users/me", { method: "GET" }),
 
-  // --- USERS (ADMIN) ---
   getUsers: () => request("/users", { method: "GET" }),
 
   createUser: (payload) =>
@@ -117,10 +111,8 @@ export const api = {
 
   getUser: (id) => request(`/users/${id}`, { method: "GET" }),
 
-  // --- other ---
-  getDashboard: () => request("/dashboard", { method: "GET" }),
 
-    // --- JOURNAL ---
+
   getJournal: () => request("/journal", { method: "GET" }),
 
   confirmDefect: (defectId, comment = "") =>
@@ -133,7 +125,6 @@ export const api = {
       method: "POST",
     }),
 
-    // --- AI SHIFT ---
   startShift: ({ mode = null, threshold = null, delaySec = 0.7 } = {}) => {
   const params = new URLSearchParams();
 
@@ -162,7 +153,6 @@ export const api = {
       method: "POST",
     }),
 
-    // --- CAMERA ---
   startCamera: ({ delaySec = 0.25 } = {}) =>
     request(`/ai/camera/start?delay_sec=${encodeURIComponent(delaySec)}`, {
       method: "POST",
@@ -178,7 +168,6 @@ export const api = {
       method: "POST",
     }),
 
-   // --- STATS ---
   getCurrentShiftStats: () =>
     request("/stats/current-shift", {
       method: "GET",
@@ -210,7 +199,6 @@ export const api = {
       method: "GET",
     }),
 
-    // --- AI MODELS ---
   getAiModels: () =>
     request("/ai/models", {
       method: "GET",
@@ -245,6 +233,19 @@ export const api = {
   getMyActivity: () =>
     request("/users/me/activity", {
       method: "GET",
+    }),
+
+  checkUserDeletion: (id) =>
+  request(`/users/${id}/delete-check`, {
+    method: "GET",
+  }),
+
+  deactivateUser: (id) =>
+    request(`/users/${id}`, {
+      method: "PUT",
+      body: {
+        is_active: false,
+      },
     }),
 
   getRolePermissions: () =>

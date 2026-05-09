@@ -1,11 +1,9 @@
-
-# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.api.journal import router as journal_router
 from app.api.auth import router as auth_router
-from app.api.users import router as users_router  # NEW
+from app.api.users import router as users_router 
 from app.api.ai import router as ai_router
 from app.api.ws import router as ws_router
 from app.api.stats import router as stats_router
@@ -26,7 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-app.include_router(users_router)  # NEW
+app.include_router(users_router) 
 app.include_router(ai_router)
 app.include_router(journal_router)
 app.include_router(ws_router)

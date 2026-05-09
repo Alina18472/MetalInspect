@@ -17,7 +17,9 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.get("/model-info")
-def get_model_info(current_user: User = Depends(get_current_user)):
+def get_model_info(
+    current_user: User = Depends(require_permission("dashboard.view")),
+):
     try:
         return ai_service.get_model_info()
     except Exception as e:
@@ -29,7 +31,7 @@ async def predict_image(
     file: UploadFile = File(...),
     mode: str = Form("balanced"),
     threshold: Optional[float] = Form(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("shift.control")),
 ):
     if mode not in MODE_PRESETS:
         raise HTTPException(
@@ -62,7 +64,7 @@ def process_stream(
     save_to_db: bool = True,
     include_frames: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("shift.control")),
 ):
     try:
         payload = process_stream_folder(
@@ -107,10 +109,9 @@ def start_shift(
 
 @router.get("/shift/status")
 def get_shift_status(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("dashboard.view")),
 ):
     return shift_runtime_service.get_status()
-
 
 @router.post("/shift/stop")
 def stop_shift(
@@ -131,10 +132,9 @@ def start_camera(
 
 @router.get("/camera/status")
 def get_camera_status(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("dashboard.view")),
 ):
     return camera_runtime_service.get_status()
-
 
 @router.post("/camera/stop")
 def stop_camera(

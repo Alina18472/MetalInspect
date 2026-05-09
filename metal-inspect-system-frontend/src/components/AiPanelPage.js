@@ -1,24 +1,439 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../styles/ai_panel.css";
 import TopNav from "../components/TopNav";
 import { api } from "../services/Api";
+import { useAuth } from "../context/AuthContext";
+
+const DEFAULT_MODE_KEYS = ["strict", "balanced", "sensitive"];
+
+const STATUS_TEXT = {
+  available: "Доступна",
+  experimental: "Экспериментальная",
+  planned: "Запланирована",
+  disabled: "Отключена",
+  error: "Ошибка",
+};
+
+const MODEL_TYPE_TEXT = {
+  classification: "Классификация",
+  detection: "Детекция",
+};
+
+const NOTICE_TITLES = {
+  success: "Готово",
+  info: "Информация",
+  error: "Ошибка",
+  access: "Недостаточно прав",
+};
+
+const NOTICE_STYLES = {
+  success: {
+    borderColor: "rgba(76, 175, 80, 0.45)",
+    borderLeft: "4px solid #4caf50",
+    background: "rgba(18, 40, 28, 0.96)",
+  },
+  info: {
+    borderColor: "rgba(77, 171, 247, 0.45)",
+    borderLeft: "4px solid #4dabf7",
+    background: "rgba(18, 30, 44, 0.96)",
+  },
+  error: {
+    borderColor: "rgba(244, 67, 54, 0.45)",
+    borderLeft: "4px solid #f44336",
+    background: "rgba(44, 22, 22, 0.96)",
+  },
+  access: {
+    borderColor: "rgba(255, 193, 7, 0.45)",
+    borderLeft: "4px solid #ffc107",
+    background: "rgba(44, 35, 18, 0.96)",
+  },
+};
+
+const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
+
+const normalizeModeKey = (mode) => String(mode || "").trim();
+
+const toNumberOrNull = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+
+  const numberValue = Number(value);
+  return Number.isNaN(numberValue) ? null : numberValue;
+};
+
+const formatThreshold = (value) => {
+  const numberValue = toNumberOrNull(value);
+  return numberValue === null ? "—" : numberValue.toFixed(3);
+};
+
+const formatClasses = (classes) => {
+  if (Array.isArray(classes)) return classes.join(", ");
+  if (typeof classes === "string" && classes.trim()) return classes;
+  return "—";
+};
+
+const getModelStatusText = (status) => {
+  const key = normalizeStatus(status);
+  return STATUS_TEXT[key] || status || "Неизвестно";
+};
+
+const getModelTypeText = (type) => {
+  return MODEL_TYPE_TEXT[type] || type || "—";
+};
+
+const getMetricRawValue = (metrics, keys) => {
+  if (!metrics) return null;
+
+  for (const key of keys) {
+    if (metrics[key] !== undefined && metrics[key] !== null) {
+      return metrics[key];
+    }
+  }
+
+  return null;
+};
+
+const formatMetricValue = (value, { percent = true } = {}) => {
+  if (value === null || value === undefined || value === "") return "—";
+
+  if (typeof value === "number") {
+    if (percent && value <= 1) {
+      return `${(value * 100).toFixed(1)}%`;
+    }
+
+    if (percent && value > 1 && value <= 100) {
+      return `${value.toFixed(1)}%`;
+    }
+
+    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  }
+
+  return String(value);
+};
+
+const getMetricProgress = (value) => {
+  if (typeof value !== "number") return 0;
+  if (value <= 1) return value * 100;
+  if (value <= 100) return value;
+  return 0;
+};
+
+const getModeKeys = (model) => {
+  const result = [];
+
+  DEFAULT_MODE_KEYS.forEach((modeKey) => {
+    if (!result.includes(modeKey)) {
+      result.push(modeKey);
+    }
+  });
+
+  Object.keys(model?.modes || {}).forEach((modeKey) => {
+    if (modeKey && !result.includes(modeKey)) {
+      result.push(modeKey);
+    }
+  });
+
+  const defaultMode = normalizeModeKey(model?.default_mode);
+
+  if (defaultMode && !result.includes(defaultMode)) {
+    result.unshift(defaultMode);
+  }
+
+  return result;
+};
+
+const getInitialMode = (model) => {
+  const defaultMode = normalizeModeKey(model?.default_mode);
+  const modeKeys = getModeKeys(model);
+
+  if (defaultMode) return defaultMode;
+  if (modeKeys.length > 0) return modeKeys[0];
+
+  return "balanced";
+};
+
+const getModeConfig = (model, modeKey) => {
+  if (!model) return {};
+
+  const normalizedMode =
+    normalizeModeKey(modeKey) ||
+    normalizeModeKey(model.default_mode) ||
+    "balanced";
+
+  const rawModeValue = model.modes?.[normalizedMode];
+
+  if (model.model_type === "detection") {
+    if (
+      rawModeValue &&
+      typeof rawModeValue === "object" &&
+      !Array.isArray(rawModeValue)
+    ) {
+      return {
+        mode: normalizedMode,
+        confidence_threshold:
+          toNumberOrNull(rawModeValue.confidence_threshold) ??
+          toNumberOrNull(rawModeValue.confidence) ??
+          toNumberOrNull(rawModeValue.threshold) ??
+          toNumberOrNull(model.confidence_threshold),
+        iou_threshold:
+          toNumberOrNull(rawModeValue.iou_threshold) ??
+          toNumberOrNull(model.iou_threshold),
+      };
+    }
+
+    return {
+      mode: normalizedMode,
+      confidence_threshold:
+        toNumberOrNull(rawModeValue) ??
+        toNumberOrNull(model.confidence_threshold),
+      iou_threshold: toNumberOrNull(model.iou_threshold),
+    };
+  }
+
+  if (
+    rawModeValue &&
+    typeof rawModeValue === "object" &&
+    !Array.isArray(rawModeValue)
+  ) {
+    return {
+      mode: normalizedMode,
+      threshold:
+        toNumberOrNull(rawModeValue.threshold) ??
+        toNumberOrNull(rawModeValue.confidence_threshold) ??
+        toNumberOrNull(model.threshold),
+    };
+  }
+
+  return {
+    mode: normalizedMode,
+    threshold:
+      toNumberOrNull(rawModeValue) ??
+      toNumberOrNull(model.threshold),
+  };
+};
+
+const getModeOptionText = (model, modeKey) => {
+  const config = getModeConfig(model, modeKey);
+
+  if (model?.model_type === "detection") {
+    return `${modeKey} — conf=${formatThreshold(
+      config.confidence_threshold
+    )}, iou=${formatThreshold(config.iou_threshold)}`;
+  }
+
+  return `${modeKey} — threshold=${formatThreshold(config.threshold)}`;
+};
+
+const parseProbabilityOrNull = (value, fieldName) => {
+  if (value === "" || value === null || value === undefined) return null;
+
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) {
+    throw new Error(`Поле "${fieldName}" должно быть числом`);
+  }
+
+  if (numberValue <= 0 || numberValue >= 1) {
+    throw new Error(`Поле "${fieldName}" должно быть в диапазоне от 0.001 до 0.999`);
+  }
+
+  return numberValue;
+};
+
+const ensureProbability = (value, fieldName) => {
+  const numberValue = toNumberOrNull(value);
+
+  if (numberValue === null) {
+    throw new Error(`Для выбранного режима не задано значение "${fieldName}"`);
+  }
+
+  if (numberValue <= 0 || numberValue >= 1) {
+    throw new Error(`Значение "${fieldName}" должно быть в диапазоне от 0.001 до 0.999`);
+  }
+
+  return numberValue;
+};
+
+const buildDefaultModes = ({
+  modelType,
+  threshold,
+  confidenceThreshold,
+  iouThreshold,
+}) => {
+  if (modelType === "detection") {
+    return {
+      strict: {
+        confidence_threshold: 0.45,
+        iou_threshold: 0.5,
+      },
+      balanced: {
+        confidence_threshold: confidenceThreshold ?? 0.25,
+        iou_threshold: iouThreshold ?? 0.45,
+      },
+      sensitive: {
+        confidence_threshold: 0.15,
+        iou_threshold: 0.4,
+      },
+    };
+  }
+
+  return {
+    strict: {
+      threshold: 0.65,
+    },
+    balanced: {
+      threshold: threshold ?? 0.465,
+    },
+    sensitive: {
+      threshold: 0.35,
+    },
+  };
+};
+
+const getClassificationMetricMode = (model, currentMode) => {
+  if (!model?.metrics?.by_mode) return null;
+
+  const byMode = model.metrics.by_mode;
+
+  const preferredMode =
+    currentMode ||
+    model.default_mode ||
+    model.metrics.default_mode ||
+    "balanced";
+
+  if (byMode[preferredMode]) {
+    return preferredMode;
+  }
+
+  if (model.default_mode && byMode[model.default_mode]) {
+    return model.default_mode;
+  }
+
+  const firstMode = Object.keys(byMode)[0];
+  return firstMode || null;
+};
+
+const getSelectedModelMetrics = (model, currentMode) => {
+  if (!model || !model.metrics) return [];
+
+  const metrics = model.metrics;
+
+  if (model.model_type === "detection") {
+    return [
+      {
+        label: "Precision",
+        value: getMetricRawValue(metrics, ["precision"]),
+        percent: true,
+      },
+      {
+        label: "Recall",
+        value: getMetricRawValue(metrics, ["recall"]),
+        percent: true,
+      },
+      {
+        label: "mAP@50",
+        value: getMetricRawValue(metrics, ["map50", "mAP50", "map_50"]),
+        percent: true,
+      },
+      {
+        label: "mAP@50-95",
+        value: getMetricRawValue(metrics, ["map50_95", "mAP50_95", "map"]),
+        percent: true,
+      },
+    ];
+  }
+
+  const metricMode = getClassificationMetricMode(model, currentMode);
+  const modeMetrics =
+    metricMode && metrics.by_mode ? metrics.by_mode[metricMode] : metrics;
+
+  return [
+    {
+      label: "Threshold",
+      value: getMetricRawValue(modeMetrics, ["threshold"]),
+      percent: false,
+    },
+    {
+      label: "Recall crack",
+      value: getMetricRawValue(modeMetrics, ["recall_crack", "recall"]),
+      percent: true,
+    },
+    {
+      label: "Precision",
+      value: getMetricRawValue(modeMetrics, ["precision"]),
+      percent: true,
+    },
+    {
+      label: "F1-score",
+      value: getMetricRawValue(modeMetrics, ["f1", "f1_score"]),
+      percent: true,
+    },
+    {
+      label: "False Negative",
+      value: getMetricRawValue(modeMetrics, ["fn", "false_negative"]),
+      percent: false,
+    },
+    {
+      label: "False Positive",
+      value: getMetricRawValue(modeMetrics, ["fp", "false_positive"]),
+      percent: false,
+    },
+  ];
+};
+
+const hasAnyMetricValue = (metricItems) => {
+  return metricItems.some(
+    (item) =>
+      item.value !== null &&
+      item.value !== undefined &&
+      item.value !== ""
+  );
+};
+
+const FloatingNotice = ({ notice, offset = 0 }) => {
+  if (!notice) return null;
+
+  const type = notice.type || "info";
+  const style = {
+    ...(NOTICE_STYLES[type] || NOTICE_STYLES.info),
+    top: offset ? `calc(96px + ${offset}px)` : undefined,
+  };
+
+  return (
+    <div
+      className={`ai-panel-access-notice ai-panel-floating-notice ${type} ${
+        notice.show ? "show" : ""
+      }`}
+      style={style}
+    >
+      <div>
+        <strong>{notice.title || NOTICE_TITLES[type] || "Сообщение"}</strong>
+        <p>{notice.message}</p>
+      </div>
+    </div>
+  );
+};
 
 const AiPanel = () => {
+  const { user, hasPermission } = useAuth();
+
   const [models, setModels] = useState([]);
   const [activeRuntime, setActiveRuntime] = useState(null);
 
   const [selectedModelId, setSelectedModelId] = useState(null);
   const [selectedMode, setSelectedMode] = useState("");
-  const [customThreshold, setCustomThreshold] = useState("");
-  const [customIouThreshold, setCustomIouThreshold] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [error, setError] = useState("");
 
+  const [accessNotice, setAccessNotice] = useState(null);
+  const accessNoticeTimerRef = useRef(null);
+  const notificationTimerRef = useRef(null);
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editStatus, setEditStatus] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
   const [createForm, setCreateForm] = useState({
     model_key: "",
     name: "",
@@ -33,7 +448,7 @@ const AiPanel = () => {
     iou_threshold: "",
     description: "",
   });
-  
+
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: "",
@@ -43,22 +458,98 @@ const AiPanel = () => {
     type: "primary",
     onConfirm: null,
   });
- 
 
-  useEffect(() => {
-    document.body.classList.add("ai-panel-page");
-    return () => document.body.classList.remove("ai-panel-page");
-  }, []);
+  const canManageAiModels =
+    typeof hasPermission === "function"
+      ? hasPermission("ai_models.manage")
+      : false;
 
-  useEffect(() => {
-    loadAiPanel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const profile = useMemo(() => {
+    const last = user?.last_name || "";
+    const first = user?.first_name || "";
+    const patronymic = user?.patronymic || "";
+
+    const name =
+      `${last} ${first} ${patronymic}`.trim() ||
+      user?.email ||
+      "Пользователь";
+
+    const role =
+      user?.role_name ||
+      user?.role?.name ||
+      (Number(user?.role_id) === 1 ? "Администратор" : "Инженер");
+
+    return {
+      name,
+      role,
+    };
+  }, [user]);
 
   const showNotification = (message, type = "info") => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+    setNotification({
+      message,
+      type,
+      title: NOTICE_TITLES[type] || "Сообщение",
+      show: true,
+    });
+
+    if (notificationTimerRef.current) {
+      clearTimeout(notificationTimerRef.current);
+    }
+
+    notificationTimerRef.current = setTimeout(() => {
+      setNotification((prev) => (prev ? { ...prev, show: false } : null));
+
+      setTimeout(() => {
+        setNotification(null);
+      }, 250);
+    }, 2800);
   };
+
+  const showAccessNotice = (message) => {
+    setAccessNotice({
+      message,
+      type: "access",
+      title: "Недостаточно прав",
+      show: true,
+    });
+
+    if (accessNoticeTimerRef.current) {
+      clearTimeout(accessNoticeTimerRef.current);
+    }
+
+    accessNoticeTimerRef.current = setTimeout(() => {
+      setAccessNotice((prev) => (prev ? { ...prev, show: false } : null));
+
+      setTimeout(() => {
+        setAccessNotice(null);
+      }, 250);
+    }, 2800);
+  };
+
+  const handleAccessError = (e, fallbackMessage) => {
+    if (e?.status === 403) {
+      const detail = e?.data?.detail;
+
+      showAccessNotice(
+        typeof detail === "string" && detail.trim()
+          ? detail
+          : fallbackMessage
+      );
+
+      return true;
+    }
+
+    return false;
+  };
+
+  const requireManagePermission = (message) => {
+    if (canManageAiModels) return true;
+
+    showAccessNotice(message);
+    return false;
+  };
+
   const openConfirmModal = ({
     title,
     message,
@@ -77,7 +568,7 @@ const AiPanel = () => {
       onConfirm,
     });
   };
-  
+
   const closeConfirmModal = () => {
     setConfirmModal((prev) => ({
       ...prev,
@@ -85,270 +576,24 @@ const AiPanel = () => {
       onConfirm: null,
     }));
   };
-  
+
   const handleConfirmModalConfirm = async () => {
     const action = confirmModal.onConfirm;
-  
+
     closeConfirmModal();
-  
+
     if (typeof action === "function") {
       await action();
     }
   };
 
-  const getModelStatusText = (status) => {
-    const map = {
-      available: "Доступна",
-      experimental: "Экспериментальная",
-      planned: "Запланирована",
-      disabled: "Отключена",
-      error: "Ошибка",
-    };
-
-    return map[status] || status || "Неизвестно";
-  };
-
-  const getModelTypeText = (type) => {
-    const map = {
-      classification: "Классификация",
-      detection: "Детекция",
-    };
-
-    return map[type] || type || "—";
-  };
-
-  const normalizeStatus = (status) => {
-    return String(status || "").trim().toLowerCase();
-  };
-
-  const getMetricRawValue = (metrics, keys) => {
-    if (!metrics) return null;
-
-    for (const key of keys) {
-      if (metrics[key] !== undefined && metrics[key] !== null) {
-        return metrics[key];
-      }
-    }
-
-    return null;
-  };
-
-  const formatMetricValue = (value, { percent = true } = {}) => {
-    if (value === null || value === undefined || value === "") return "—";
-
-    if (typeof value === "number") {
-      if (percent && value <= 1) {
-        return `${(value * 100).toFixed(1)}%`;
-      }
-
-      if (percent && value > 1 && value <= 100) {
-        return `${value.toFixed(1)}%`;
-      }
-
-      return Number.isInteger(value) ? String(value) : value.toFixed(3);
-    }
-
-    return String(value);
-  };
-
-  const getMetricProgress = (value) => {
-    if (typeof value !== "number") return 0;
-
-    if (value <= 1) return value * 100;
-    if (value <= 100) return value;
-
-    return 0;
-  };
-
-  const getClassificationMetricMode = (model, currentMode) => {
-    if (!model?.metrics?.by_mode) return null;
-
-    const byMode = model.metrics.by_mode;
-
-    const preferredMode =
-      currentMode ||
-      model.default_mode ||
-      model.metrics.default_mode ||
-      "balanced";
-
-    if (byMode[preferredMode]) {
-      return preferredMode;
-    }
-
-    if (model.default_mode && byMode[model.default_mode]) {
-      return model.default_mode;
-    }
-
-    const firstMode = Object.keys(byMode)[0];
-    return firstMode || null;
-  };
-
-  const getSelectedModelMetrics = (model, currentMode) => {
-    if (!model || !model.metrics) return [];
-
-    const metrics = model.metrics;
-
-    if (model.model_type === "detection") {
-      return [
-        {
-          label: "Precision",
-          value: getMetricRawValue(metrics, ["precision"]),
-          percent: true,
-        },
-        {
-          label: "Recall",
-          value: getMetricRawValue(metrics, ["recall"]),
-          percent: true,
-        },
-        {
-          label: "mAP@50",
-          value: getMetricRawValue(metrics, ["map50", "mAP50", "map_50"]),
-          percent: true,
-        },
-        {
-          label: "mAP@50-95",
-          value: getMetricRawValue(metrics, ["map50_95", "mAP50_95", "map"]),
-          percent: true,
-        },
-      ];
-    }
-
-    const metricMode = getClassificationMetricMode(model, currentMode);
-    const modeMetrics =
-      metricMode && metrics.by_mode ? metrics.by_mode[metricMode] : metrics;
-
-    return [
-      {
-        label: "Threshold",
-        value: getMetricRawValue(modeMetrics, ["threshold"]),
-        percent: false,
-      },
-      {
-        label: "Recall crack",
-        value: getMetricRawValue(modeMetrics, ["recall_crack", "recall"]),
-        percent: true,
-      },
-      {
-        label: "Precision",
-        value: getMetricRawValue(modeMetrics, ["precision"]),
-        percent: true,
-      },
-      {
-        label: "F1-score",
-        value: getMetricRawValue(modeMetrics, ["f1", "f1_score"]),
-        percent: true,
-      },
-      {
-        label: "False Negative",
-        value: getMetricRawValue(modeMetrics, ["fn", "false_negative"]),
-        percent: false,
-      },
-      {
-        label: "False Positive",
-        value: getMetricRawValue(modeMetrics, ["fp", "false_positive"]),
-        percent: false,
-      },
-    ];
-  };
-
-  const hasAnyMetricValue = (metricItems) => {
-    return metricItems.some(
-      (item) =>
-        item.value !== null &&
-        item.value !== undefined &&
-        item.value !== ""
-    );
-  };
-
-  const getModelMainThreshold = (model) => {
-    if (!model) return "";
-
-    if (model.model_type === "detection") {
-      return model.confidence_threshold !== null &&
-        model.confidence_threshold !== undefined
-        ? String(model.confidence_threshold)
-        : "";
-    }
-
-    return model.threshold !== null && model.threshold !== undefined
-      ? String(model.threshold)
-      : "";
-  };
-
-  const getModelIouThreshold = (model) => {
-    if (!model) return "";
-
-    return model.iou_threshold !== null && model.iou_threshold !== undefined
-      ? String(model.iou_threshold)
-      : "";
-  };
-
-  const getModeConfig = (model, modeKey) => {
-    if (!model || !model.modes || !modeKey) return {};
-
-    const value = model.modes[modeKey];
-
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      return value;
-    }
-
-    if (model.model_type === "detection") {
-      return {
-        confidence_threshold: value,
-        iou_threshold: model.iou_threshold,
-      };
-    }
-
-    return {
-      threshold: value,
-    };
-  };
-
-  const getModeOptionText = (model, modeKey) => {
-    const config = getModeConfig(model, modeKey);
-
-    if (model.model_type === "detection") {
-      const conf = config.confidence_threshold ?? model.confidence_threshold ?? "—";
-      const iou = config.iou_threshold ?? model.iou_threshold ?? "—";
-      return `${modeKey} — conf=${conf}, iou=${iou}`;
-    }
-
-    const threshold = config.threshold ?? model.threshold ?? "—";
-    return `${modeKey} — threshold=${threshold}`;
-  };
-
   const handleSelectModel = (model) => {
-    const mode = model.default_mode || "";
+    const mode = getInitialMode(model);
 
     setSelectedModelId(model.id);
     setSelectedMode(mode);
     setEditStatus(model.status || "available");
     setEditDescription(model.description || "");
-
-    const config = getModeConfig(model, mode);
-
-    if (model.model_type === "detection") {
-      setCustomThreshold(
-        config.confidence_threshold !== null &&
-          config.confidence_threshold !== undefined
-          ? String(config.confidence_threshold)
-          : getModelMainThreshold(model)
-      );
-
-      setCustomIouThreshold(
-        config.iou_threshold !== null && config.iou_threshold !== undefined
-          ? String(config.iou_threshold)
-          : getModelIouThreshold(model)
-      );
-    } else {
-      setCustomThreshold(
-        config.threshold !== null && config.threshold !== undefined
-          ? String(config.threshold)
-          : getModelMainThreshold(model)
-      );
-
-      setCustomIouThreshold("");
-    }
   };
 
   const loadAiPanel = async ({
@@ -369,7 +614,7 @@ const AiPanel = () => {
         console.warn("Runtime активной модели недоступен:", runtimeError);
       }
 
-      const loadedModels = modelsData || [];
+      const loadedModels = Array.isArray(modelsData) ? modelsData : [];
 
       setModels(loadedModels);
       setActiveRuntime(runtimeData || null);
@@ -400,11 +645,40 @@ const AiPanel = () => {
         handleSelectModel(modelToSelect);
       }
     } catch (e) {
+      if (handleAccessError(e, "У вас нет прав на просмотр AI-моделей.")) {
+        return;
+      }
+
       setError(e?.message || "Не удалось загрузить данные AI-панели");
+      showNotification(
+        e?.message || "Не удалось загрузить данные AI-панели",
+        "error"
+      );
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    document.body.classList.add("ai-panel-page");
+
+    return () => {
+      document.body.classList.remove("ai-panel-page");
+
+      if (accessNoticeTimerRef.current) {
+        clearTimeout(accessNoticeTimerRef.current);
+      }
+
+      if (notificationTimerRef.current) {
+        clearTimeout(notificationTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    loadAiPanel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm((prev) => {
@@ -441,59 +715,11 @@ const AiPanel = () => {
     });
   };
 
-  const parseNumberOrNull = (value, fieldName) => {
-    if (value === "" || value === null || value === undefined) return null;
-
-    const numberValue = Number(value);
-
-    if (Number.isNaN(numberValue)) {
-      throw new Error(`Поле "${fieldName}" должно быть числом`);
-    }
-
-    if (numberValue < 0 || numberValue > 1) {
-      throw new Error(`Поле "${fieldName}" должно быть в диапазоне от 0 до 1`);
-    }
-
-    return numberValue;
-  };
-
-  const buildDefaultModes = ({
-    modelType,
-    threshold,
-    confidenceThreshold,
-    iouThreshold,
-  }) => {
-    if (modelType === "detection") {
-      return {
-        strict: {
-          confidence_threshold: 0.45,
-          iou_threshold: 0.5,
-        },
-        balanced: {
-          confidence_threshold: confidenceThreshold ?? 0.25,
-          iou_threshold: iouThreshold ?? 0.45,
-        },
-        sensitive: {
-          confidence_threshold: 0.15,
-          iou_threshold: 0.4,
-        },
-      };
-    }
-
-    return {
-      strict: {
-        threshold: 0.65,
-      },
-      balanced: {
-        threshold: threshold ?? 0.465,
-      },
-      sensitive: {
-        threshold: 0.35,
-      },
-    };
-  };
-
   const handleCreateModel = async () => {
+    if (!requireManagePermission("У вас нет права на создание AI-моделей.")) {
+      return;
+    }
+
     setError("");
 
     try {
@@ -517,7 +743,10 @@ const AiPanel = () => {
         return;
       }
 
-      if (!weightsPath && ["available", "experimental"].includes(createForm.status)) {
+      if (
+        !weightsPath &&
+        ["available", "experimental"].includes(createForm.status)
+      ) {
         showNotification(
           "Для модели со статусом available или experimental нужно указать путь к весам",
           "info"
@@ -532,20 +761,23 @@ const AiPanel = () => {
 
       const thresholdValue =
         createForm.model_type === "classification"
-          ? parseNumberOrNull(createForm.threshold, "threshold")
+          ? parseProbabilityOrNull(createForm.threshold, "balanced threshold")
           : null;
 
       const confidenceThresholdValue =
         createForm.model_type === "detection"
-          ? parseNumberOrNull(
+          ? parseProbabilityOrNull(
               createForm.confidence_threshold,
-              "confidence_threshold"
+              "balanced confidence threshold"
             )
           : null;
 
       const iouThresholdValue =
         createForm.model_type === "detection"
-          ? parseNumberOrNull(createForm.iou_threshold, "iou_threshold")
+          ? parseProbabilityOrNull(
+              createForm.iou_threshold,
+              "balanced IoU threshold"
+            )
           : null;
 
       const generatedModes = buildDefaultModes({
@@ -555,6 +787,20 @@ const AiPanel = () => {
         iouThreshold: iouThresholdValue,
       });
 
+      const defaultMode = createForm.default_mode || "balanced";
+
+      const defaultConfig = getModeConfig(
+        {
+          model_type: createForm.model_type,
+          default_mode: defaultMode,
+          modes: generatedModes,
+          threshold: thresholdValue,
+          confidence_threshold: confidenceThresholdValue,
+          iou_threshold: iouThresholdValue,
+        },
+        defaultMode
+      );
+
       const payload = {
         model_key: modelKey,
         name,
@@ -563,42 +809,70 @@ const AiPanel = () => {
         weights_path: weightsPath || null,
         classes: classes.length > 0 ? classes : null,
         status: createForm.status,
-        default_mode: createForm.default_mode || "balanced",
-        threshold: thresholdValue,
-        confidence_threshold: confidenceThresholdValue,
-        iou_threshold: iouThresholdValue,
+        default_mode: defaultMode,
         modes: generatedModes,
         metrics: null,
         description: createForm.description.trim() || null,
       };
 
+      if (createForm.model_type === "classification") {
+        payload.threshold = ensureProbability(
+          defaultConfig.threshold,
+          "threshold выбранного режима"
+        );
+        payload.confidence_threshold = null;
+        payload.iou_threshold = null;
+      }
+
+      if (createForm.model_type === "detection") {
+        payload.threshold = null;
+        payload.confidence_threshold = ensureProbability(
+          defaultConfig.confidence_threshold,
+          "confidence threshold выбранного режима"
+        );
+        payload.iou_threshold = ensureProbability(
+          defaultConfig.iou_threshold,
+          "IoU threshold выбранного режима"
+        );
+      }
+
       setIsLoading(true);
 
       const createdModel = await api.createAiModel(payload);
 
-      await loadAiPanel({ preferredModelId: createdModel.id });
+      await loadAiPanel({ preferredModelId: createdModel?.id });
 
       setShowCreateForm(false);
-      showNotification(`Модель "${createdModel.name}" добавлена`, "success");
+      showNotification(`Модель "${createdModel?.name || name}" добавлена`, "success");
     } catch (e) {
-      setError(e?.message || "Не удалось создать модель");
+      if (handleAccessError(e, "У вас нет права на создание AI-моделей.")) {
+        return;
+      }
+
+      const message = e?.message || "Не удалось создать модель";
+      setError(message);
+      showNotification(message, "error");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleActivateModel = async () => {
+    if (!requireManagePermission("У вас нет права на активацию AI-моделей.")) {
+      return;
+    }
+
     const selectedModel = models.find(
       (m) => Number(m.id) === Number(selectedModelId)
     );
-  
+
     if (!selectedModel) {
       showNotification("Сначала выберите модель", "info");
       return;
     }
-  
+
     const status = normalizeStatus(selectedModel.status);
-  
+
     if (["disabled", "error", "planned"].includes(status)) {
       showNotification(
         `Модель нельзя активировать. Текущий статус: ${getModelStatusText(
@@ -608,23 +882,29 @@ const AiPanel = () => {
       );
       return;
     }
-  
+
     openConfirmModal({
       title: "Активировать AI-модель?",
-      message: `Модель «${selectedModel.name}» станет активной. Новые смены будут использовать именно эту модель и её настройки.`,
+      message: `Модель «${selectedModel.name}» станет активной. Новые смены будут использовать именно эту модель и её текущий режим.`,
       confirmText: "Активировать",
       cancelText: "Отмена",
       type: "primary",
       onConfirm: async () => {
         setIsLoading(true);
         setError("");
-  
+
         try {
           await api.activateAiModel(selectedModel.id);
           await loadAiPanel({ preferredModelId: selectedModel.id });
           showNotification(`Модель «${selectedModel.name}» активирована`, "success");
         } catch (e) {
-          setError(e?.message || "Не удалось активировать модель");
+          if (handleAccessError(e, "У вас нет права на активацию AI-моделей.")) {
+            return;
+          }
+
+          const message = e?.message || "Не удалось активировать модель";
+          setError(message);
+          showNotification(message, "error");
         } finally {
           setIsLoading(false);
         }
@@ -633,6 +913,14 @@ const AiPanel = () => {
   };
 
   const handleSaveSettings = async () => {
+    if (
+      !requireManagePermission(
+        "У вас нет права на изменение настроек AI-моделей."
+      )
+    ) {
+      return;
+    }
+
     const selectedModel = models.find(
       (m) => Number(m.id) === Number(selectedModelId)
     );
@@ -644,7 +932,7 @@ const AiPanel = () => {
 
     if (
       selectedModel.is_active &&
-      ["planned", "disabled", "error"].includes(editStatus)
+      ["planned", "disabled", "error"].includes(normalizeStatus(editStatus))
     ) {
       showNotification(
         "Активную модель нельзя отключить. Сначала активируйте другую модель.",
@@ -653,48 +941,37 @@ const AiPanel = () => {
       return;
     }
 
-    const payload = {};
+    const modeKey = selectedMode || getInitialMode(selectedModel);
+    const modeConfig = getModeConfig(selectedModel, modeKey);
 
-    if (selectedMode) {
-      payload.default_mode = selectedMode;
-    }
+    const payload = {
+      default_mode: modeKey,
+      status: editStatus || selectedModel.status,
+      description: editDescription,
+    };
 
-    if (editStatus) {
-      payload.status = editStatus;
-    }
-
-    payload.description = editDescription;
-
-    if (customThreshold !== "") {
-      const thresholdNumber = Number(customThreshold);
-
-      if (
-        Number.isNaN(thresholdNumber) ||
-        thresholdNumber < 0 ||
-        thresholdNumber > 1
-      ) {
-        showNotification("Threshold должен быть числом от 0 до 1", "info");
-        return;
-      }
-
+    try {
       if (selectedModel.model_type === "classification") {
-        payload.threshold = thresholdNumber;
+        payload.threshold = ensureProbability(
+          modeConfig.threshold,
+          "threshold выбранного режима"
+        );
       }
 
       if (selectedModel.model_type === "detection") {
-        payload.confidence_threshold = thresholdNumber;
+        payload.confidence_threshold = ensureProbability(
+          modeConfig.confidence_threshold,
+          "confidence threshold выбранного режима"
+        );
+
+        payload.iou_threshold = ensureProbability(
+          modeConfig.iou_threshold,
+          "IoU threshold выбранного режима"
+        );
       }
-    }
-
-    if (selectedModel.model_type === "detection" && customIouThreshold !== "") {
-      const iouNumber = Number(customIouThreshold);
-
-      if (Number.isNaN(iouNumber) || iouNumber < 0 || iouNumber > 1) {
-        showNotification("IoU threshold должен быть числом от 0 до 1", "info");
-        return;
-      }
-
-      payload.iou_threshold = iouNumber;
+    } catch (e) {
+      showNotification(e.message, "error");
+      return;
     }
 
     setIsLoading(true);
@@ -705,7 +982,18 @@ const AiPanel = () => {
       await loadAiPanel({ preferredModelId: selectedModel.id });
       showNotification("Настройки модели сохранены", "success");
     } catch (e) {
-      setError(e?.message || "Не удалось сохранить настройки модели");
+      if (
+        handleAccessError(
+          e,
+          "У вас нет права на изменение настроек AI-моделей."
+        )
+      ) {
+        return;
+      }
+
+      const message = e?.message || "Не удалось сохранить настройки модели";
+      setError(message);
+      showNotification(message, "error");
     } finally {
       setIsLoading(false);
     }
@@ -714,106 +1002,110 @@ const AiPanel = () => {
   const selectedModel = models.find(
     (m) => Number(m.id) === Number(selectedModelId)
   );
-  
+
   const activeModel = models.find((m) => m.is_active);
-  
+
   const totalModels = models.length;
-  const availableCount = models.filter((m) => m.status === "available").length;
-  const experimentalCount = models.filter((m) => m.status === "experimental").length;
+  const availableCount = models.filter(
+    (m) => normalizeStatus(m.status) === "available"
+  ).length;
+  const experimentalCount = models.filter(
+    (m) => normalizeStatus(m.status) === "experimental"
+  ).length;
   const disabledCount = models.filter((m) =>
     ["disabled", "error", "planned"].includes(normalizeStatus(m.status))
   ).length;
-  
-  const modes = selectedModel?.modes || {};
+
+  const modeKeys = selectedModel ? getModeKeys(selectedModel) : [];
+  const selectedModeConfig = selectedModel
+    ? getModeConfig(selectedModel, selectedMode)
+    : {};
+
   const selectedMetricItems = getSelectedModelMetrics(selectedModel, selectedMode);
   const hasMetrics = hasAnyMetricValue(selectedMetricItems);
   const classificationMetricMode = getClassificationMetricMode(
     selectedModel,
     selectedMode
   );
-  
+
+  const notificationOffset = notification && accessNotice ? 96 : 0;
 
   return (
     <div className="container">
-            <TopNav
-              subtitle="Система распознавания трещин в слитках • Управление AI-моделями"
-              userName="Оператор системы"
-              userRole="Контроль качества"
-            />
+      <TopNav
+        subtitle="Система распознавания трещин в слитках - Модели"
+        userName={profile.name}
+        userRole={profile.role}
+      />
 
-            {notification && (
-              <div style={{ padding: "12px 20px", color: "#4dabf7", fontWeight: 600 }}>
-                {notification.type === "success" ? "✓ " : "ℹ "}
-                {notification.message}
-              </div>
-            )}
+      <FloatingNotice notice={notification} />
+      <FloatingNotice notice={accessNotice} offset={notificationOffset} />
 
-            {error && (
-              <div style={{ padding: "12px 20px", color: "#f44336", fontWeight: 600 }}>
-                {error}
-              </div>
-            )}
-
-            {isLoading && (
-              <div style={{ padding: "12px 20px", color: "#8fb4d9" }}>
-                Загрузка...
-              </div>
-            )}
-
-            <div className="main-content">
-            <div className="ai-summary-grid">
-        <div className="ai-summary-card">
-          
-          <div>
-            <div className="ai-summary-value">{totalModels}</div>
-            <div className="ai-summary-label">Всего моделей</div>
-          </div>
+      {error && (
+        <div className="ai-panel-page-error">
+          {error}
         </div>
+      )}
 
-        <div className="ai-summary-card">
-         
-          <div>
-            <div className="ai-summary-value">
-              {activeModel?.architecture || "—"}
-            </div>
-            <div className="ai-summary-label">
-              Активная модель: {activeModel?.name || "не выбрана"}
+
+      <div className="main-content">
+        <div className="ai-summary-grid">
+          <div className="ai-summary-card">
+            <div>
+              <div className="ai-summary-value">{totalModels}</div>
+              <div className="ai-summary-label">Всего моделей</div>
             </div>
           </div>
-        </div>
 
-        <div className="ai-summary-card">
-          
-          <div>
-            <div className="ai-summary-value">{availableCount}</div>
-            <div className="ai-summary-label">Доступные модели</div>
+          <div className="ai-summary-card">
+            <div>
+              <div className="ai-summary-value">
+                {activeModel?.architecture || "—"}
+              </div>
+              <div className="ai-summary-label">
+                Активная модель: {activeModel?.name || "не выбрана"}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="ai-summary-card">
-         
-          <div>
-            <div className="ai-summary-value">{experimentalCount}</div>
-            <div className="ai-summary-label">
-              Экспериментальные: {experimentalCount} / Неактивные: {disabledCount}
+          <div className="ai-summary-card">
+            <div>
+              <div className="ai-summary-value">{availableCount}</div>
+              <div className="ai-summary-label">Доступные модели</div>
+            </div>
+          </div>
+
+          <div className="ai-summary-card">
+            <div>
+              <div className="ai-summary-value">{experimentalCount}</div>
+              <div className="ai-summary-label">
+                Экспериментальные: {experimentalCount} / Неактивные: {disabledCount}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+
         <div className="ai-monitoring-panel">
           <div className="charts-panel">
             <div className="monitoring-panel">
               <div className="panel-header">
-                <h2>
-                  <i className="fas fa-list"></i> Реестр AI-моделей
-                </h2>
+                <h2>Реестр AI-моделей</h2>
 
                 <div className="controls">
                   <button
                     className="action-btn2 secondary"
-                    onClick={() => setShowCreateForm((prev) => !prev)}
+                    onClick={() => {
+                      if (
+                        !requireManagePermission(
+                          "У вас нет права на добавление AI-моделей."
+                        )
+                      ) {
+                        return;
+                      }
+
+                      setShowCreateForm((prev) => !prev);
+                    }}
                   >
-                    <i className="fas fa-plus"></i>{" "}
                     {showCreateForm ? "Скрыть форму" : "Добавить модель"}
                   </button>
 
@@ -821,40 +1113,19 @@ const AiPanel = () => {
                     className="action-btn2 secondary"
                     onClick={() => loadAiPanel({ keepSelected: true })}
                   >
-                    <i className="fas fa-sync-alt"></i> Обновить
+                    Обновить
                   </button>
                 </div>
               </div>
 
               <div className="panel-content">
-                {showCreateForm && (
-                  <div
-                    style={{
-                      marginBottom: "20px",
-                      padding: "18px",
-                      borderRadius: "10px",
-                      border: "1px solid rgba(77,171,247,0.25)",
-                      background: "rgba(15, 25, 40, 0.75)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#e0e0e0",
-                        fontWeight: 700,
-                        marginBottom: "16px",
-                        fontSize: "16px",
-                      }}
-                    >
+                {showCreateForm && canManageAiModels && (
+                  <div className="ai-create-model-form">
+                    <div className="ai-create-model-title">
                       Добавление новой AI-модели
                     </div>
 
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "14px",
-                      }}
-                    >
+                    <div className="ai-create-model-grid">
                       <div>
                         <label style={labelStyle}>Название модели</label>
                         <input
@@ -947,7 +1218,7 @@ const AiPanel = () => {
                       </div>
 
                       <div>
-                        <label style={labelStyle}>Default mode</label>
+                        <label style={labelStyle}>Рабочий режим</label>
                         <select
                           value={createForm.default_mode}
                           onChange={(e) =>
@@ -963,12 +1234,14 @@ const AiPanel = () => {
 
                       {createForm.model_type === "classification" && (
                         <div>
-                          <label style={labelStyle}>Threshold</label>
+                          <label style={labelStyle}>
+                            Balanced threshold для формирования режимов
+                          </label>
                           <input
                             type="number"
                             step="0.001"
-                            min="0"
-                            max="1"
+                            min="0.001"
+                            max="0.999"
                             value={createForm.threshold}
                             onChange={(e) =>
                               handleCreateFormChange("threshold", e.target.value)
@@ -981,12 +1254,14 @@ const AiPanel = () => {
                       {createForm.model_type === "detection" && (
                         <>
                           <div>
-                            <label style={labelStyle}>Confidence threshold</label>
+                            <label style={labelStyle}>
+                              Balanced confidence threshold
+                            </label>
                             <input
                               type="number"
                               step="0.001"
-                              min="0"
-                              max="1"
+                              min="0.001"
+                              max="0.999"
                               value={createForm.confidence_threshold}
                               onChange={(e) =>
                                 handleCreateFormChange(
@@ -999,12 +1274,12 @@ const AiPanel = () => {
                           </div>
 
                           <div>
-                            <label style={labelStyle}>IoU threshold</label>
+                            <label style={labelStyle}>Balanced IoU threshold</label>
                             <input
                               type="number"
                               step="0.001"
-                              min="0"
-                              max="1"
+                              min="0.001"
+                              max="0.999"
                               value={createForm.iou_threshold}
                               onChange={(e) =>
                                 handleCreateFormChange(
@@ -1019,7 +1294,7 @@ const AiPanel = () => {
                       )}
                     </div>
 
-                    <div style={{ marginTop: "14px" }}>
+                    <div className="ai-create-model-description">
                       <label style={labelStyle}>Описание</label>
                       <textarea
                         value={createForm.description}
@@ -1035,13 +1310,13 @@ const AiPanel = () => {
                       />
                     </div>
 
-                    <div className="action-buttons" style={{ marginTop: "16px" }}>
+                    <div className="action-buttons ai-create-model-actions">
                       <button
                         className="action-btn2 primary"
                         onClick={handleCreateModel}
                         disabled={isLoading}
                       >
-                        <i className="fas fa-plus"></i> Создать модель
+                        Создать модель
                       </button>
 
                       <button
@@ -1053,14 +1328,8 @@ const AiPanel = () => {
                       </button>
                     </div>
 
-                    <div
-                      style={{
-                        color: "#8fb4d9",
-                        marginTop: "12px",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Сейчас файл весов не загружается через интерфейс. Нужно
+                    <div className="ai-create-model-note">
+                      Файл весов сейчас не загружается через интерфейс. Нужно
                       указать путь к уже размещённому файлу, например{" "}
                       <code>./models_ml/best_weighted.pt</code>. Режимы{" "}
                       <strong>strict</strong>, <strong>balanced</strong> и{" "}
@@ -1071,7 +1340,7 @@ const AiPanel = () => {
 
                 <div className="models-list">
                   {models.length === 0 ? (
-                    <div style={{ color: "#8fb4d9", padding: "20px" }}>
+                    <div className="ai-empty-state">
                       Модели не найдены
                     </div>
                   ) : (
@@ -1079,17 +1348,19 @@ const AiPanel = () => {
                       <div
                         key={model.id}
                         className={`model-comparison ${
-                          selectedModelId === model.id ? "active" : ""
+                          Number(selectedModelId) === Number(model.id)
+                            ? "active"
+                            : ""
                         }`}
                         onClick={() => handleSelectModel(model)}
                         style={{ cursor: "pointer" }}
                       >
                         <div className="model-icon">
                           <i
-                            className={
+                             className={
                               model.model_type === "detection"
-                                ? "fas fa-vector-square"
-                                : "fas fa-brain"
+                              ? "fas fa-vector-square"
+                               : "fas fa-brain"
                             }
                           ></i>
                         </div>
@@ -1098,12 +1369,7 @@ const AiPanel = () => {
                           <div className="model-name">
                             {model.name}
                             {model.is_active && (
-                              <span
-                                style={{
-                                  color: "#4CAF50",
-                                  marginLeft: "10px",
-                                }}
-                              >
+                              <span className="ai-active-model-label">
                                 Активна
                               </span>
                             )}
@@ -1120,7 +1386,7 @@ const AiPanel = () => {
                             <div className="model-stat">
                               Архитектура:{" "}
                               <span className="model-stat-value">
-                                {model.architecture}
+                                {model.architecture || "—"}
                               </span>
                             </div>
 
@@ -1141,9 +1407,7 @@ const AiPanel = () => {
 
             <div className="monitoring-panel model-details-panel">
               <div className="panel-header">
-                <h2>
-                  <i className="fas fa-chart-bar"></i> Данные выбранной модели
-                </h2>
+                <h2>Данные выбранной модели</h2>
               </div>
 
               <div className="panel-content">
@@ -1179,8 +1443,40 @@ const AiPanel = () => {
 
                       <div className="summary-row">
                         <span>Классы</span>
-                        <strong>{selectedModel.classes?.join(", ") || "—"}</strong>
+                        <strong>{formatClasses(selectedModel.classes)}</strong>
                       </div>
+
+                      <div className="summary-row">
+                        <span>Рабочий режим</span>
+                        <strong>{selectedModel.default_mode || "—"}</strong>
+                      </div>
+
+                      {selectedModel.model_type === "classification" && (
+                        <div className="summary-row">
+                          <span>Текущий threshold</span>
+                          <strong>{formatThreshold(selectedModel.threshold)}</strong>
+                        </div>
+                      )}
+
+                      {selectedModel.model_type === "detection" && (
+                        <>
+                          <div className="summary-row">
+                            <span>Текущий confidence threshold</span>
+                            <strong>
+                              {formatThreshold(
+                                selectedModel.confidence_threshold
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="summary-row">
+                            <span>Текущий IoU threshold</span>
+                            <strong>
+                              {formatThreshold(selectedModel.iou_threshold)}
+                            </strong>
+                          </div>
+                        </>
+                      )}
 
                       <div className="summary-row summary-row-path">
                         <span>Файл весов</span>
@@ -1261,39 +1557,29 @@ const AiPanel = () => {
           <div className="analysis-panel">
             <div className="monitoring-panel">
               <div className="panel-header">
-                <h2>
-                  <i className="fas fa-cogs"></i> Настройки модели
-                </h2>
+                <h2>Настройки модели</h2>
               </div>
 
               <div className="panel-content">
                 {!selectedModel ? (
-                  <div style={{ color: "#8fb4d9" }}>
+                  <div className="ai-empty-state">
                     Выберите модель из списка.
                   </div>
                 ) : (
-                  <>
-                    <div style={{ color: "#b0c4de", marginBottom: "8px" }}>
-                      Выбранная модель
+                  <div className="ai-settings-form">
+                    <div className="ai-selected-model-title">
+                      <span>Выбранная модель</span>
+                      <strong>{selectedModel.name}</strong>
                     </div>
 
-                    <div
-                      style={{
-                        color: "#e0e0e0",
-                        fontWeight: 600,
-                        marginBottom: "18px",
-                      }}
-                    >
-                      {selectedModel.name}
-                    </div>
-
-                    <div style={{ marginBottom: "16px" }}>
+                    <div className="ai-form-field">
                       <label style={labelStyle}>Статус модели</label>
 
                       <select
                         value={editStatus}
                         onChange={(e) => setEditStatus(e.target.value)}
                         style={inputStyle}
+                        disabled={!canManageAiModels}
                       >
                         <option value="available">available — доступна</option>
                         <option value="experimental">
@@ -1305,7 +1591,7 @@ const AiPanel = () => {
                       </select>
                     </div>
 
-                    <div style={{ marginBottom: "16px" }}>
+                    <div className="ai-form-field">
                       <label style={labelStyle}>Описание модели</label>
 
                       <textarea
@@ -1317,48 +1603,20 @@ const AiPanel = () => {
                           ...inputStyle,
                           resize: "vertical",
                         }}
+                        disabled={!canManageAiModels}
                       />
                     </div>
 
-                    <div style={{ marginBottom: "16px" }}>
-                      <label style={labelStyle}>Режим</label>
+                    <div className="ai-form-field">
+                      <label style={labelStyle}>Рабочий режим</label>
 
                       <select
                         value={selectedMode}
-                        onChange={(e) => {
-                          setSelectedMode(e.target.value);
-                          const modeKey = e.target.value;
-                          const config = getModeConfig(selectedModel, modeKey);
-
-                          if (selectedModel.model_type === "detection") {
-                            setCustomThreshold(
-                              config.confidence_threshold !== null &&
-                                config.confidence_threshold !== undefined
-                                ? String(config.confidence_threshold)
-                                : getModelMainThreshold(selectedModel)
-                            );
-
-                            setCustomIouThreshold(
-                              config.iou_threshold !== null &&
-                                config.iou_threshold !== undefined
-                                ? String(config.iou_threshold)
-                                : getModelIouThreshold(selectedModel)
-                            );
-                          } else {
-                            setCustomThreshold(
-                              config.threshold !== null &&
-                                config.threshold !== undefined
-                                ? String(config.threshold)
-                                : getModelMainThreshold(selectedModel)
-                            );
-
-                            setCustomIouThreshold("");
-                          }
-                        }}
+                        onChange={(e) => setSelectedMode(e.target.value)}
                         style={inputStyle}
+                        disabled={!canManageAiModels}
                       >
-                        <option value="">Не выбран</option>
-                        {Object.keys(modes).map((modeKey) => (
+                        {modeKeys.map((modeKey) => (
                           <option key={modeKey} value={modeKey}>
                             {getModeOptionText(selectedModel, modeKey)}
                           </option>
@@ -1366,49 +1624,16 @@ const AiPanel = () => {
                       </select>
                     </div>
 
-                    <div style={{ marginBottom: "16px" }}>
-                      <label style={labelStyle}>
-                        {selectedModel.model_type === "detection"
-                          ? "Confidence threshold"
-                          : "Threshold"}
-                      </label>
+                    
+                   
 
-                      <input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max="1"
-                        value={customThreshold}
-                        onChange={(e) => setCustomThreshold(e.target.value)}
-                        style={inputStyle}
-                      />
-                    </div>
-
-                    {selectedModel.model_type === "detection" && (
-                      <div style={{ marginBottom: "16px" }}>
-                        <label style={labelStyle}>IoU threshold</label>
-
-                        <input
-                          type="number"
-                          step="0.001"
-                          min="0"
-                          max="1"
-                          value={customIouThreshold}
-                          onChange={(e) =>
-                            setCustomIouThreshold(e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </div>
-                    )}
-
-                    <div className="action-buttons">
+                    <div className="action-buttons ai-settings-actions">
                       <button
                         className="action-btn2 secondary"
                         onClick={handleSaveSettings}
                         disabled={isLoading}
                       >
-                        <i className="fas fa-save"></i> Сохранить настройки
+                        Сохранить настройки
                       </button>
 
                       <button
@@ -1416,68 +1641,61 @@ const AiPanel = () => {
                         onClick={handleActivateModel}
                         disabled={isLoading || selectedModel.is_active}
                       >
-                        <i className="fas fa-power-off"></i>{" "}
                         {selectedModel.is_active ? "Уже активна" : "Активировать"}
                       </button>
                     </div>
 
-                    {selectedModel &&
-                      ["disabled", "error", "planned"].includes(
-                        normalizeStatus(selectedModel.status)
-                      ) && (
-                        <div
-                          style={{
-                            color: "#ffb4b4",
-                            marginTop: "12px",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          Модель нельзя активировать, потому что её статус:{" "}
-                          <strong>{selectedModel.status}</strong>.
-                        </div>
-                      )}
-                  </>
+                    {["disabled", "error", "planned"].includes(
+                      normalizeStatus(selectedModel.status)
+                    ) && (
+                      <div className="ai-model-warning">
+                        Модель нельзя активировать, потому что её статус:{" "}
+                        <strong>{selectedModel.status}</strong>.
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="monitoring-panel">
               <div className="panel-header">
-                <h2>
-                  <i className="fas fa-server"></i> Runtime активной модели
-                </h2>
+                <h2>Runtime активной модели</h2>
               </div>
 
               <div className="panel-content">
-                <div style={{ color: "#b0c4de", lineHeight: 1.8 }}>
+                <div className="ai-runtime-details">
                   <div>
                     <strong>Модель:</strong> {activeRuntime?.name || "—"}
                   </div>
+
                   <div>
                     <strong>Ключ:</strong> {activeRuntime?.model_key || "—"}
                   </div>
+
                   <div>
                     <strong>Тип:</strong>{" "}
                     {getModelTypeText(activeRuntime?.model_type)}
                   </div>
+
                   <div>
                     <strong>Архитектура:</strong>{" "}
                     {activeRuntime?.architecture || "—"}
                   </div>
+
                   <div>
                     <strong>Device:</strong> {activeRuntime?.device || "—"}
                   </div>
+
                   <div>
                     <strong>Classes:</strong>{" "}
-                    {activeRuntime?.classes?.join(", ") || "—"}
+                    {formatClasses(activeRuntime?.classes)}
                   </div>
+
                   {activeRuntime?.model_type === "classification" && (
                     <div>
                       <strong>Порог классификации:</strong>{" "}
-                      {activeRuntime?.threshold !== null &&
-                      activeRuntime?.threshold !== undefined
-                        ? Number(activeRuntime.threshold).toFixed(3)
-                        : "—"}
+                      {formatThreshold(activeRuntime?.threshold)}
                     </div>
                   )}
 
@@ -1485,25 +1703,21 @@ const AiPanel = () => {
                     <>
                       <div>
                         <strong>Порог уверенности:</strong>{" "}
-                        {activeRuntime?.confidence_threshold !== null &&
-                        activeRuntime?.confidence_threshold !== undefined
-                          ? Number(activeRuntime.confidence_threshold).toFixed(3)
-                          : "—"}
+                        {formatThreshold(activeRuntime?.confidence_threshold)}
                       </div>
 
                       <div>
                         <strong>IoU-порог:</strong>{" "}
-                        {activeRuntime?.iou_threshold !== null &&
-                        activeRuntime?.iou_threshold !== undefined
-                          ? Number(activeRuntime.iou_threshold).toFixed(3)
-                          : "—"}
+                        {formatThreshold(activeRuntime?.iou_threshold)}
                       </div>
                     </>
-)}
+                  )}
+
                   <div>
                     <strong>Weights:</strong>{" "}
                     {activeRuntime?.weights_path || "—"}
                   </div>
+
                   <div>
                     <strong>Loaded:</strong>{" "}
                     {activeRuntime?.loaded ? "да" : "нет"}
@@ -1514,24 +1728,24 @@ const AiPanel = () => {
 
             <div className="monitoring-panel">
               <div className="panel-header">
-                <h2>
-                  <i className="fas fa-info-circle"></i> Что означает режим
-                </h2>
+                <h2>Что означает режим</h2>
               </div>
 
               <div className="panel-content">
-                <div style={{ color: "#8fb4d9", lineHeight: 1.7 }}>
+                <div className="ai-mode-help">
                   <p>
-                    <strong>strict</strong> — более высокий threshold, меньше
-                    ложных срабатываний, но выше риск пропустить дефект.
+                    <strong>strict</strong> — более высокий порог. Меньше ложных
+                    срабатываний, но выше риск пропустить дефект.
                   </p>
+
                   <p>
-                    <strong>balanced</strong> — основной рабочий режим, выбранный
-                    после настройки threshold.
+                    <strong>balanced</strong> — основной рабочий режим. Для
+                    ResNet18 это твой настроенный threshold около 0.465.
                   </p>
+
                   <p>
-                    <strong>sensitive</strong> — более чувствительный режим,
-                    снижает риск пропуска дефекта, но может увеличить количество
+                    <strong>sensitive</strong> — более чувствительный режим.
+                    Снижает риск пропуска дефекта, но может увеличить количество
                     ложных срабатываний.
                   </p>
                 </div>
@@ -1539,7 +1753,8 @@ const AiPanel = () => {
             </div>
           </div>
         </div>
-      </div> 
+      </div>
+
       {confirmModal.isOpen && (
         <div className="ai-confirm-overlay" onClick={closeConfirmModal}>
           <div
@@ -1549,16 +1764,6 @@ const AiPanel = () => {
             aria-modal="true"
           >
             <div className="ai-confirm-header">
-              <div className={`ai-confirm-icon ${confirmModal.type}`}>
-                <i
-                  className={
-                    confirmModal.type === "danger"
-                      ? "fas fa-exclamation-triangle"
-                      : "fas fa-question"
-                  }
-                ></i>
-              </div>
-
               <div>
                 <h3>{confirmModal.title}</h3>
                 <p>{confirmModal.message}</p>

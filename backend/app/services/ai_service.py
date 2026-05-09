@@ -11,7 +11,6 @@ from app.core.database import SessionLocal
 from app.models.ai_model import AiModel
 from ultralytics import YOLO
 
-# Fallback, чтобы старый код не сломался
 MODE_PRESETS = {
     "strict": {
         "title": "Меньше ложных срабатываний / больше пропусков",
@@ -103,14 +102,6 @@ class AiService:
         return model, None, classes, device, yolo_device
 
     def reload_active_model(self):
-        """
-        Загружает активную модель из таблицы ai_models.
-
-        Сейчас поддерживается:
-        - classification + ResNet18
-
-        YOLO/detection добавим отдельным этапом.
-        """
         db = SessionLocal()
 
         try:
@@ -207,13 +198,7 @@ class AiService:
         mode: Optional[str] = None,
         threshold: Optional[float] = None,
     ) -> float:
-        """
-        Приоритет:
-        1. threshold, если явно передали;
-        2. threshold из режима active model;
-        3. threshold активной модели;
-        4. fallback balanced = 0.465.
-        """
+       
         if threshold is not None:
             return float(threshold)
 
@@ -229,12 +214,8 @@ class AiService:
         if selected_mode in modes:
             mode_value = modes[selected_mode]
 
-            # Старый вариант: "balanced": 0.465
             if isinstance(mode_value, (int, float)):
                 return float(mode_value)
-
-            # Новый вариант: "balanced": {"threshold": 0.465}
-            # или "detection": {"confidence_threshold": 0.25}
             if isinstance(mode_value, dict):
                 if active_model_type == "detection":
                     value = (
@@ -355,7 +336,6 @@ class AiService:
             "model_name": model_name,
             "model_type": model_type,
             "architecture": architecture,
-
             "verdict": verdict,
             "p_crack": float(max_conf),
             "p_ok": float(p_ok),
@@ -363,8 +343,6 @@ class AiService:
             "threshold": float(actual_threshold),
             "mode": mode or "detection",
             "classes": classes,
-
-            # Для сохранения bbox в БД
             "detections": detections,
             "best_bbox": best_bbox,
             "bbox_count": len(detections),
@@ -420,7 +398,6 @@ class AiService:
             "model_name": model_name,
             "model_type": model_type,
             "architecture": architecture,
-
             "verdict": verdict,
             "p_crack": p_crack,
             "p_ok": p_ok,
@@ -428,9 +405,6 @@ class AiService:
             "threshold": float(actual_threshold),
             "mode": mode or self.active_default_mode or "balanced",
             "classes": classes,
-
-          
-            # Для совместимости с YOLO
             "detections": [],
             "best_bbox": None,
             "bbox_count": 0,

@@ -1,4 +1,4 @@
-/* Изолируем стили для страницы настроек */
+
 .settings-page {
     min-height: 100vh;
     background: linear-gradient(135deg, #0c1a2d 0%, #1a2b3c 50%, #0d2335 100%);
@@ -28,7 +28,6 @@
     min-height: 100vh;
 }
 
-/* Уведомления */
 .settings-notification {
     position: fixed;
     top: 20px;
@@ -69,7 +68,6 @@
     }
 }
 
-/* Основное содержимое */
 .settings-main-content {
     display: flex;
     flex: 1;
@@ -78,7 +76,6 @@
     gap: 20px;
 }
 
-/* Боковая панель с навигацией по настройкам */
 .settings-sidebar {
     flex: 0 0 250px;
     background-color: rgba(18, 30, 44, 0.85);
@@ -155,7 +152,6 @@
     font-weight: 500;
 }
 
-/* Основная панель настроек */
 .settings-main-panel {
     flex: 1;
     display: flex;
@@ -235,7 +231,6 @@
     padding: 25px;
 }
 
-/* Стили для индикаторов состояния */
 .settings-status-indicator {
     display: flex;
     align-items: center;
@@ -264,7 +259,6 @@
     box-shadow: 0 0 5px rgba(244, 67, 54, 0.5);
 }
 
-/* Сетка настроек */
 .settings-grid {
     display: flex;
     flex-wrap: wrap;
@@ -298,7 +292,6 @@
     margin-top: 2px;
 }
 
-/* Элементы управления */
 .settings-input {
     width: 100%;
     padding: 12px 15px;
@@ -334,7 +327,6 @@
     padding-right: 40px;
 }
 
-/* Слайдеры */
 .settings-slider-container {
     display: flex;
     align-items: center;
@@ -383,7 +375,6 @@
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 }
 
-/* Чекбоксы */
 .settings-checkbox-group {
     display: flex;
     flex-wrap: wrap;
@@ -473,7 +464,6 @@
     gap: 10px;
 }
 
-/* Калибровка */
 .settings-calibration-container {
     display: flex;
     gap: 25px;
@@ -543,7 +533,6 @@
     background-color: #4dabf7;
 }
 
-/* Карточки моделей нейросети */
 .settings-model-card {
     background-color: rgba(30, 45, 65, 0.6);
     border-radius: 8px;
@@ -621,7 +610,6 @@
     font-size: 0.8rem;
 }
 
-/* Модальное окно */
 .settings-modal-overlay {
     position: fixed;
     top: 0;
