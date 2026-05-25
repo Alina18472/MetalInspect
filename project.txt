@@ -44,7 +44,7 @@ metal-inspect-system/
 │   ├── src/
 
 
-
+1
 Metal_Inspect_0/
 ├── .venv/                     # Единое Python-окружение для backend (FastAPI)
 ├── backend/                   # Backend на FastAPI

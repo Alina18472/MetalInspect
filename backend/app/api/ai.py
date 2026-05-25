@@ -2,7 +2,8 @@
 from typing import Optional
 
 from fastapi import Query
-
+import time
+from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from app.services.shift_runtime_service import shift_runtime_service
 from app.core.security import get_current_user
@@ -173,6 +174,7 @@ def start_shift(
     mode: Optional[str] = Query(default=None),
     threshold: Optional[float] = Query(default=None),
     delay_sec: float = Query(default=0.0, ge=0.0),
+    analysis_debug: bool = Query(default=False),
     current_user: User = Depends(require_permission("shift.control")),
 ):
     return shift_runtime_service.start_shift(
@@ -180,6 +182,7 @@ def start_shift(
         mode=mode,
         threshold=threshold,
         delay_sec=delay_sec,
+        analysis_debug=analysis_debug,
     )
 
 
@@ -192,3 +195,112 @@ def start_camera(
         return camera_runtime_service.start_camera(delay_sec=delay_sec)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/runtime/snapshot")
+def get_runtime_snapshot(
+    current_user: User = Depends(require_permission("dashboard.view")),
+):
+    snapshot_started = time.perf_counter()
+    collected_at = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+
+    shift_status = shift_runtime_service.get_status()
+    camera_status = camera_runtime_service.get_status()
+
+    collection_duration_ms = (time.perf_counter() - snapshot_started) * 1000.0
+
+    camera_fps = float(camera_status.get("camera_fps") or 0.0)
+    target_camera_fps = float(camera_status.get("target_camera_fps") or 0.0)
+    analysis_fps = float(shift_status.get("analysis_fps") or 0.0)
+
+    queue_size = int(shift_status.get("queue_size") or 0)
+    analysis_queue_frames = int(shift_status.get("analysis_queue_frames") or 0)
+    buffered_frames_count = int(shift_status.get("buffered_frames_count") or 0)
+
+    processed_frames = int(
+        shift_status.get("processed_frames_total")
+        or shift_status.get("processed_frames")
+        or 0
+    )
+
+    camera_frames_sent = int(camera_status.get("camera_frames_sent") or 0)
+
+    fps_gap_camera_vs_analysis = camera_fps - analysis_fps
+
+    if camera_fps > 0:
+        analysis_to_camera_ratio = analysis_fps / camera_fps
+    else:
+        analysis_to_camera_ratio = None
+
+    if target_camera_fps > 0:
+        camera_to_target_ratio = camera_fps / target_camera_fps
+    else:
+        camera_to_target_ratio = None
+
+    summary = {
+        "camera_running": bool(camera_status.get("running")),
+        "shift_running": bool(shift_status.get("running")),
+        "analysis_running": bool(shift_status.get("analysis_running")),
+        "shift_phase": shift_status.get("shift_phase"),
+
+        "target_camera_fps": target_camera_fps,
+        "camera_fps": camera_fps,
+        "analysis_fps": analysis_fps,
+        "fps_gap_camera_vs_analysis": round(fps_gap_camera_vs_analysis, 2),
+        "analysis_to_camera_ratio": (
+            round(analysis_to_camera_ratio, 3)
+            if analysis_to_camera_ratio is not None
+            else None
+        ),
+        "camera_to_target_ratio": (
+            round(camera_to_target_ratio, 3)
+            if camera_to_target_ratio is not None
+            else None
+        ),
+
+        "camera_frames_sent": camera_frames_sent,
+        "processed_frames": processed_frames,
+
+        "queue_size": queue_size,
+        "analysis_queue_frames": analysis_queue_frames,
+        "buffered_frames_count": buffered_frames_count,
+        "dropped_frames": int(shift_status.get("dropped_frames") or 0),
+
+        "avg_analysis_time_ms": float(shift_status.get("avg_analysis_time_ms") or 0.0),
+        "last_analysis_time_ms": float(shift_status.get("last_analysis_time_ms") or 0.0),
+
+        "processed_ingots": int(shift_status.get("processed_ingots") or 0),
+        "total_crack": int(shift_status.get("total_crack") or 0),
+        "total_ok": int(shift_status.get("total_ok") or 0),
+        "defect_rate": float(shift_status.get("defect_rate") or 0.0),
+
+        "is_analysis_lagging": (
+            bool(camera_status.get("running"))
+            and bool(shift_status.get("running"))
+            and analysis_fps > 0
+            and camera_fps > analysis_fps
+        ),
+        "is_queue_growing_risk": queue_size > 0 and camera_fps > analysis_fps,
+        "last_task_total_time_ms": float(shift_status.get("last_task_total_time_ms") or 0.0),
+        "avg_task_total_time_ms": float(shift_status.get("avg_task_total_time_ms") or 0.0),
+        "last_model_analysis_time_ms": float(shift_status.get("last_model_analysis_time_ms") or 0.0),
+        "last_image_load_time_ms": float(shift_status.get("last_image_load_time_ms") or 0.0),
+        "last_batch_inference_time_ms": float(shift_status.get("last_batch_inference_time_ms") or 0.0),
+        "last_prediction_postprocess_time_ms": float(shift_status.get("last_prediction_postprocess_time_ms") or 0.0),
+        "last_best_frame_save_time_ms": float(shift_status.get("last_best_frame_save_time_ms") or 0.0),
+        "last_db_save_time_ms": float(shift_status.get("last_db_save_time_ms") or 0.0),
+        "last_shift_stats_update_time_ms": float(shift_status.get("last_shift_stats_update_time_ms") or 0.0),
+        "last_storage_upload_time_ms": float(shift_status.get("last_storage_upload_time_ms") or 0.0),
+        "last_ws_publish_time_ms": float(shift_status.get("last_ws_publish_time_ms") or 0.0),
+        
+    }
+
+    return {
+        "type": "runtime_snapshot",
+        "collected_at": collected_at,
+        "collection_duration_ms": round(collection_duration_ms, 3),
+        "summary": summary,
+        "shift": shift_status,
+        "camera": camera_status,
+        
+    }

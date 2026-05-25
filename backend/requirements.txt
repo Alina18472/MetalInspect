@@ -11,3 +11,5 @@ opencv-python
 python-multipart
 minio
 ultralytics
+onnx
+onnxruntime

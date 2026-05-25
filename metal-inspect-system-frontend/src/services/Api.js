@@ -147,7 +147,7 @@ export const api = {
         method: "POST",
       });
     },
-
+  getRuntimeSnapshot: () => request("/ai/runtime/snapshot"),
   getShiftStatus: () =>
     request("/ai/shift/status", {
       method: "GET",

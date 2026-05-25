@@ -2,11 +2,16 @@
 from pathlib import Path
 from threading import Lock
 from typing import Optional
-
+import json
+import numpy as np
+import onnxruntime as ort
 import torch
 import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
+torch.set_num_threads(4)
+torch.set_num_interop_threads(1)
+
 torch.set_grad_enabled(False)
 
 if torch.cuda.is_available():
@@ -57,6 +62,10 @@ class AiService:
         self.active_metrics = None
         self.active_weights_path = None
         self.yolo_device = None
+        self.active_runtime_backend = None
+        self.onnx_input_name = None
+        self.onnx_output_name = None
+        self.onnx_providers = None
 
     def _resolve_weights_path(self, weights_path: str) -> Path:
         path = Path(weights_path)
@@ -137,6 +146,10 @@ class AiService:
             classes = None
             device = None
             yolo_device = None
+            runtime_backend = None
+            onnx_input_name = None
+            onnx_output_name = None
+            onnx_providers = None
 
             if model_row.model_type == "classification":
                 if model_row.architecture != "ResNet18":
@@ -145,7 +158,22 @@ class AiService:
                         f"Получено: {model_row.architecture}"
                     )
 
-                loaded_model, tf, classes, device = self._load_resnet18_checkpoint(weights_path)
+                if weights_path.suffix.lower() == ".onnx":
+                    (
+                        loaded_model,
+                        tf,
+                        classes,
+                        device,
+                        onnx_input_name,
+                        onnx_output_name,
+                        onnx_providers,
+                    ) = self._load_resnet18_onnx(weights_path)
+
+                    runtime_backend = "onnxruntime"
+
+                else:
+                    loaded_model, tf, classes, device = self._load_resnet18_checkpoint(weights_path)
+                    runtime_backend = "pytorch"
 
                 if "crack" not in classes or "ok" not in classes:
                     raise RuntimeError(f"Ожидались классы crack/ok, получено: {classes}")
@@ -184,6 +212,10 @@ class AiService:
                 self.active_modes = model_row.modes
                 self.active_metrics = model_row.metrics
                 self.active_weights_path = model_row.weights_path
+                self.active_runtime_backend = runtime_backend
+                self.onnx_input_name = onnx_input_name
+                self.onnx_output_name = onnx_output_name
+                self.onnx_providers = onnx_providers
 
             return self.get_active_model_runtime_info()
 
@@ -232,7 +264,8 @@ class AiService:
             model_type = self.active_model_type
             architecture = self.active_architecture
             default_mode = self.active_default_mode
-
+            runtime_backend = self.active_runtime_backend
+        
         if model_type == "detection":
             return [
                 self._predict_yolo_pil(
@@ -242,7 +275,12 @@ class AiService:
                 )
                 for pil_img in pil_images
             ]
-
+        if runtime_backend == "onnxruntime":
+            return self._predict_resnet18_onnx_batch(
+                pil_images=pil_images,
+                actual_threshold=actual_threshold,
+                mode=mode,
+            )
         if model_type != "classification":
             raise RuntimeError(
                 f"predict_pil_batch поддерживает classification/ResNet18. "
@@ -302,6 +340,54 @@ class AiService:
             })
 
         return results
+    def _load_resnet18_onnx(self, weights_path: Path):
+        meta_path = weights_path.with_suffix(weights_path.suffix + ".meta.json")
+
+        if not meta_path.exists():
+            raise RuntimeError(
+                f"Для ONNX-модели не найден meta-файл: {meta_path}. "
+                f"Ожидался файл рядом с .onnx: {weights_path.name}.meta.json"
+            )
+
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+        classes = meta["classes"]
+        img_size = int(meta["img_size"])
+
+        session_options = ort.SessionOptions()
+        session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        # Значения можно потом подобрать так же, как для torch.set_num_threads(...)
+        session_options.intra_op_num_threads = 4
+        session_options.inter_op_num_threads = 1
+
+        session = ort.InferenceSession(
+            str(weights_path),
+            sess_options=session_options,
+            providers=["CPUExecutionProvider"],
+        )
+
+        input_name = session.get_inputs()[0].name
+        output_name = session.get_outputs()[0].name
+        providers = session.get_providers()
+
+        tf = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225],
+            ),
+        ])
+
+        return session, tf, classes, "cpu", input_name, output_name, providers
+    
+    def _softmax_numpy(self, logits: np.ndarray, axis: int = 1) -> np.ndarray:
+        logits = logits - np.max(logits, axis=axis, keepdims=True)
+        exp = np.exp(logits)
+        return exp / np.sum(exp, axis=axis, keepdims=True)
+    
+    
     def get_threshold_for_mode(
         self,
         mode: Optional[str] = None,
@@ -373,7 +459,78 @@ class AiService:
                 "modes": self.active_modes,
                 "metrics": self.active_metrics,
                 "loaded": self.model is not None,
+                "runtime_backend": self.active_runtime_backend,
+                "onnx_input_name": self.onnx_input_name,
+                "onnx_output_name": self.onnx_output_name,
+                "onnx_providers": self.onnx_providers,
             }
+            
+    def _predict_resnet18_onnx_batch(
+        self,
+        pil_images: list[Image.Image],
+        actual_threshold: float,
+        mode: Optional[str] = None,
+    ):
+        with self._lock:
+            session = self.model
+            tf = self.tf
+            classes = self.classes
+
+            input_name = self.onnx_input_name
+            output_name = self.onnx_output_name
+
+            model_id = self.active_model_id
+            model_key = self.active_model_key
+            model_name = self.active_model_name
+            model_type = self.active_model_type
+            architecture = self.active_architecture
+            default_mode = self.active_default_mode
+
+        if session is None or tf is None or not input_name or not output_name:
+            raise RuntimeError("ONNX Runtime модель не загружена корректно")
+
+        tensors = [
+            tf(pil_img.convert("RGB"))
+            for pil_img in pil_images
+        ]
+
+        batch_tensor = torch.stack(tensors, dim=0)
+        batch_np = batch_tensor.detach().cpu().numpy().astype(np.float32)
+
+        logits = session.run([output_name], {input_name: batch_np})[0]
+        probs_batch = self._softmax_numpy(logits, axis=1)
+
+        crack_idx = classes.index("crack")
+        ok_idx = classes.index("ok")
+
+        results = []
+
+        for probs in probs_batch:
+            p_crack = float(probs[crack_idx])
+            p_ok = float(probs[ok_idx])
+
+            verdict = "CRACK" if p_crack >= actual_threshold else "OK"
+            confidence = p_crack if verdict == "CRACK" else p_ok
+
+            results.append({
+                "model_id": model_id,
+                "model_key": model_key,
+                "model_name": model_name,
+                "model_type": model_type,
+                "architecture": architecture,
+                "verdict": verdict,
+                "p_crack": p_crack,
+                "p_ok": p_ok,
+                "confidence": float(confidence),
+                "threshold": float(actual_threshold),
+                "mode": mode or default_mode or "balanced",
+                "classes": classes,
+                "detections": [],
+                "best_bbox": None,
+                "bbox_count": 0,
+            })
+
+        return results
     def _predict_yolo_pil(
         self,
         pil_img: Image.Image,
@@ -480,12 +637,20 @@ class AiService:
             architecture = self.active_architecture
             
             
+    
+            
         if model_type == "detection":
             return self._predict_yolo_pil(
                 pil_img=pil_img,
                 actual_threshold=actual_threshold,
                 mode=mode,
             )
+
+        return self.predict_pil_batch(
+            pil_images=[pil_img],
+            threshold=threshold,
+            mode=mode,
+        )[0]
         # x = tf(pil_img).unsqueeze(0).to(device)
 
         # logits = model(x)

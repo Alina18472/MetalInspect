@@ -163,7 +163,11 @@ class CameraRuntimeService:
             return self._current_frame_path
 
     def _camera_loop(self, delay_sec: float):
+        next_frame_time = time.perf_counter()
+
         while True:
+            loop_started = time.perf_counter()
+
             with self._lock:
                 if self._stop_requested:
                     self._status["running"] = False
@@ -191,7 +195,6 @@ class CameraRuntimeService:
                 frame_url = stream_image_path_to_url(frame_path)
 
                 self._current_index = (self._current_index + 1) % len(self._files)
-
                 self._frames_sent += 1
 
                 elapsed = (
@@ -257,7 +260,14 @@ class CameraRuntimeService:
                 except Exception:
                     pass
 
-            time.sleep(delay_sec)
+            next_frame_time += delay_sec
+            sleep_for = next_frame_time - time.perf_counter()
+
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            else:
+                # Если цикл не успел, не накапливаем бесконечное отставание.
+                next_frame_time = time.perf_counter()
 
 
 camera_runtime_service = CameraRuntimeService()

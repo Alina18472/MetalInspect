@@ -49,6 +49,7 @@ class ShiftRuntimeService:
 
         self._stop_requested = False
         self._accepting_frames = False
+        self._analysis_debug = False
 
         self._current_source_ingot_id = None
         self._current_frame_buffer = []
@@ -63,6 +64,9 @@ class ShiftRuntimeService:
         self._last_analysis_time_ms = 0.0
         self._total_analysis_time_ms = 0.0
 
+        self._processed_tasks = 0
+        self._total_task_time_ms = 0.0
+
         self._status = self._initial_status()
 
         camera_runtime_service.register_frame_consumer(self.enqueue_camera_frame)
@@ -74,6 +78,8 @@ class ShiftRuntimeService:
             "accepting_frames": False,
             "analysis_running": False,
             "stop_requested": False,
+            "analysis_debug": False,
+            "analysis_frame_events_enabled": False,
 
             "started_at": None,
             "finished_at": None,
@@ -99,6 +105,18 @@ class ShiftRuntimeService:
             "analysis_fps": 0.0,
             "last_analysis_time_ms": 0.0,
             "avg_analysis_time_ms": 0.0,
+
+            "last_task_total_time_ms": 0.0,
+            "avg_task_total_time_ms": 0.0,
+            "last_model_analysis_time_ms": 0.0,
+            "last_image_load_time_ms": 0.0,
+            "last_batch_inference_time_ms": 0.0,
+            "last_prediction_postprocess_time_ms": 0.0,
+            "last_best_frame_save_time_ms": 0.0,
+            "last_db_save_time_ms": 0.0,
+            "last_shift_stats_update_time_ms": 0.0,
+            "last_storage_upload_time_ms": 0.0,
+            "last_ws_publish_time_ms": 0.0,
 
             "current_ingot": None,
             "current_source_ingot": None,
@@ -141,6 +159,10 @@ class ShiftRuntimeService:
                 )
         except Exception:
             return 0
+
+    def _is_analysis_debug_enabled(self) -> bool:
+        with self._lock:
+            return bool(self._analysis_debug)
 
     def _build_analysis_metrics_locked(self) -> dict:
         queued_frames = self._get_queued_frames_count()
@@ -189,6 +211,9 @@ class ShiftRuntimeService:
         self._last_analysis_time_ms = 0.0
         self._total_analysis_time_ms = 0.0
 
+        self._processed_tasks = 0
+        self._total_task_time_ms = 0.0
+
         self._status.update(self._build_analysis_metrics_locked())
 
     def _record_frame_analysis_metric(self, analysis_time_ms: float):
@@ -197,6 +222,43 @@ class ShiftRuntimeService:
             self._last_analysis_time_ms = float(analysis_time_ms or 0.0)
             self._total_analysis_time_ms += float(analysis_time_ms or 0.0)
             self._status.update(self._build_analysis_metrics_locked())
+
+    def _record_task_profiling(
+        self,
+        task_total_time_ms: float,
+        model_analysis_time_ms: float,
+        db_save_time_ms: float,
+        shift_stats_update_time_ms: float,
+        storage_upload_time_ms: float,
+        image_load_time_ms: float = 0.0,
+        batch_inference_time_ms: float = 0.0,
+        prediction_postprocess_time_ms: float = 0.0,
+        best_frame_save_time_ms: float = 0.0,
+    ):
+        with self._lock:
+            self._processed_tasks += 1
+            self._total_task_time_ms += float(task_total_time_ms or 0.0)
+
+            avg_task_total_time_ms = (
+                self._total_task_time_ms / self._processed_tasks
+                if self._processed_tasks > 0
+                else 0.0
+            )
+
+            self._status.update({
+                "last_task_total_time_ms": round(float(task_total_time_ms or 0.0), 2),
+                "avg_task_total_time_ms": round(avg_task_total_time_ms, 2),
+                "last_model_analysis_time_ms": round(float(model_analysis_time_ms or 0.0), 2),
+
+                "last_image_load_time_ms": round(float(image_load_time_ms or 0.0), 2),
+                "last_batch_inference_time_ms": round(float(batch_inference_time_ms or 0.0), 2),
+                "last_prediction_postprocess_time_ms": round(float(prediction_postprocess_time_ms or 0.0), 2),
+                "last_best_frame_save_time_ms": round(float(best_frame_save_time_ms or 0.0), 2),
+
+                "last_db_save_time_ms": round(float(db_save_time_ms or 0.0), 2),
+                "last_shift_stats_update_time_ms": round(float(shift_stats_update_time_ms or 0.0), 2),
+                "last_storage_upload_time_ms": round(float(storage_upload_time_ms or 0.0), 2),
+            })
 
     def get_status(self):
         with self._lock:
@@ -226,6 +288,7 @@ class ShiftRuntimeService:
         mode: Optional[str] = None,
         threshold: Optional[float] = None,
         delay_sec: float = 0.7,
+        analysis_debug: bool = False,
     ):
         ai_service.ensure_model_loaded()
         active_model = ai_service.get_active_model_runtime_info()
@@ -265,6 +328,7 @@ class ShiftRuntimeService:
             self._analysis_queue = queue.Queue()
             self._stop_requested = False
             self._accepting_frames = True
+            self._analysis_debug = bool(analysis_debug)
 
             self._current_source_ingot_id = None
             self._current_frame_buffer = []
@@ -282,6 +346,8 @@ class ShiftRuntimeService:
                 "accepting_frames": True,
                 "analysis_running": True,
                 "stop_requested": False,
+                "analysis_debug": bool(analysis_debug),
+                "analysis_frame_events_enabled": bool(analysis_debug),
 
                 "started_at": datetime.utcnow().isoformat(timespec="seconds"),
                 "mode": mode,
@@ -328,6 +394,8 @@ class ShiftRuntimeService:
             "active_model_architecture": active_model.get("architecture"),
             "confidence_threshold": active_model.get("confidence_threshold"),
             "iou_threshold": active_model.get("iou_threshold"),
+            "analysis_debug": bool(analysis_debug),
+            "analysis_frame_events_enabled": bool(analysis_debug),
             "message": "Смена запущена. Камера работает отдельно, анализ получает кадры из очереди.",
         })
 
@@ -551,7 +619,16 @@ class ShiftRuntimeService:
             current_source_ingot=source_ingot_id,
             current_cycle=cycle_number,
             current_sequence_number=sequence_number,
+            current_frame_name=None,
+            current_frame_url=None,
+            current_frame_index=None,
             current_frame_total=len(ingot_files),
+            current_p_crack=None,
+            current_frame_verdict=None,
+            current_model_type=None,
+            current_detections=[],
+            current_best_bbox=None,
+            current_bbox_count=0,
             message=(
                 f"Анализ {system_ingot_id} "
                 f"(источник кадров: {source_ingot_id}, кадров: {len(ingot_files)})"
@@ -559,9 +636,14 @@ class ShiftRuntimeService:
         )
 
         def on_frame(frame_info: dict):
+            if not self._is_analysis_debug_enabled():
+                return
+
             self._set_status(
                 current_ingot=frame_info["ingot_id"],
                 current_source_ingot=source_ingot_id,
+                current_cycle=cycle_number,
+                current_sequence_number=sequence_number,
                 current_frame_name=frame_info["frame_name"],
                 current_frame_url=frame_info["frame_url"],
                 current_frame_index=frame_info["frame_index"],
@@ -602,6 +684,7 @@ class ShiftRuntimeService:
                 "best_bbox": frame_info.get("best_bbox"),
                 "bbox_count": len(frame_info.get("detections", []) or []),
                 "analysis_time_ms": frame_info.get("analysis_time_ms"),
+                "batch_analysis_time_ms": frame_info.get("batch_analysis_time_ms"),
 
                 "analysis_fps": metrics["analysis_fps"],
                 "last_analysis_time_ms": metrics["last_analysis_time_ms"],
@@ -610,6 +693,10 @@ class ShiftRuntimeService:
                 "processed_frames": metrics["processed_frames"],
                 "dropped_frames": metrics["dropped_frames"],
             })
+
+        task_total_start = time.perf_counter()
+
+        model_analysis_start = time.perf_counter()
 
         result = process_one_ingot(
             ingot_id=system_ingot_id,
@@ -620,26 +707,67 @@ class ShiftRuntimeService:
             on_frame_metric=self._record_frame_analysis_metric,
         )
 
+        model_analysis_time_ms = (time.perf_counter() - model_analysis_start) * 1000.0
+
         result["source_ingot_id"] = source_ingot_id
         result["cycle_number"] = cycle_number
         result["sequence_number"] = sequence_number
 
+        db_save_start = time.perf_counter()
         db = SessionLocal()
+
         try:
             saved = save_one_ingot_result_to_db(
                 db=db,
                 result=result,
                 user_id=user_id,
                 shift_id=task["shift_id"],
+                commit=False,
             )
+
+            db_save_time_ms = (time.perf_counter() - db_save_start) * 1000.0
+
+            shift_stats_update_start = time.perf_counter()
+
+            update_shift_stats_incremental(
+                db=db,
+                shift_id=task["shift_id"],
+                result=result,
+                commit=False,
+            )
+
+            db.commit()
+
+            shift_stats_update_time_ms = (
+                time.perf_counter() - shift_stats_update_start
+            ) * 1000.0
+
+        except Exception:
+            db.rollback()
+            raise
+
         finally:
             db.close()
 
-        db = SessionLocal()
-        try:
-            update_shift_stats(db=db, shift_id=task["shift_id"])
-        finally:
-            db.close()
+        task_total_time_ms = (time.perf_counter() - task_total_start) * 1000.0
+
+        storage_upload_time_ms = 0.0
+        if saved:
+            storage_upload_time_ms = float(saved.get("storage_upload_time_ms") or 0.0)
+
+        profiling = result.get("profiling") or {}
+
+        self._record_task_profiling(
+            task_total_time_ms=task_total_time_ms,
+            model_analysis_time_ms=model_analysis_time_ms,
+            db_save_time_ms=db_save_time_ms,
+            shift_stats_update_time_ms=shift_stats_update_time_ms,
+            storage_upload_time_ms=storage_upload_time_ms,
+            image_load_time_ms=float(profiling.get("image_load_time_ms") or 0.0),
+            batch_inference_time_ms=float(profiling.get("batch_inference_time_ms") or 0.0),
+            prediction_postprocess_time_ms=float(profiling.get("prediction_postprocess_time_ms") or 0.0),
+            best_frame_save_time_ms=float(profiling.get("best_frame_save_time_ms") or 0.0),
+        )
 
         return result, saved
 
@@ -660,6 +788,7 @@ class ShiftRuntimeService:
             )
             self._status.update(self._build_analysis_metrics_locked())
 
+        ws_publish_start = time.perf_counter()
         metrics = self._get_analysis_metrics_snapshot()
 
         shift_ws_manager.broadcast_json({
@@ -722,6 +851,11 @@ class ShiftRuntimeService:
                 "processed_frames": metrics["processed_frames"],
                 "dropped_frames": metrics["dropped_frames"],
             })
+
+        ws_publish_time_ms = (time.perf_counter() - ws_publish_start) * 1000.0
+
+        with self._lock:
+            self._status["last_ws_publish_time_ms"] = round(ws_publish_time_ms, 2)
 
     def _finish_shift(self, shift_id: int, status: str, message: str):
         finished_at = datetime.utcnow().isoformat(timespec="seconds")
@@ -829,27 +963,35 @@ def process_one_ingot(
     total_frames = len(ingot_files)
     last_pred = None
 
-    for frame_index, img_path in enumerate(ingot_files, start=1):
-        with PILImage.open(img_path) as img:
-            pil_img = img.convert("RGB")
+    image_load_time_ms = 0.0
+    batch_inference_time_ms = 0.0
+    prediction_postprocess_time_ms = 0.0
+    best_frame_save_time_ms = 0.0
 
-        analysis_start = time.perf_counter()
+    active_model_info = ai_service.get_active_model_runtime_info()
+    active_model_type = active_model_info.get("model_type")
 
-        pred = ai_service.predict_pil(
-            pil_img=pil_img,
-            threshold=threshold,
-            mode=mode,
-        )
-
-        analysis_time_ms = (time.perf_counter() - analysis_start) * 1000.0
-
-        if on_frame_metric:
-            on_frame_metric(analysis_time_ms)
+    def handle_prediction(
+        img_path: str,
+        frame_index: int,
+        pred: dict,
+        analysis_time_ms: float,
+        batch_analysis_time_ms: float | None = None,
+    ):
+        nonlocal frames_count
+        nonlocal max_p_crack
+        nonlocal best_frame_src
+        nonlocal best_bbox
+        nonlocal best_detections
+        nonlocal best_model_type
+        nonlocal effective_threshold
+        nonlocal last_pred
 
         last_pred = pred
 
         p_crack = float(pred.get("p_crack", 0))
         effective_threshold = float(pred.get("threshold", threshold or 0))
+
         frame_verdict = pred.get("verdict") or (
             "CRACK" if p_crack >= effective_threshold else "OK"
         )
@@ -860,7 +1002,7 @@ def process_one_ingot(
 
         frames_count += 1
 
-        if p_crack > max_p_crack:
+        if best_frame_src is None or p_crack > max_p_crack:
             max_p_crack = p_crack
             best_frame_src = img_path
             best_bbox = bbox
@@ -881,18 +1023,129 @@ def process_one_ingot(
                 "detections": detections,
                 "best_bbox": bbox,
                 "analysis_time_ms": analysis_time_ms,
+                "batch_analysis_time_ms": batch_analysis_time_ms,
             })
+
+    if active_model_type == "classification":
+        frame_items = []
+        pil_images = []
+
+        image_load_start = time.perf_counter()
+
+        for frame_index, img_path in enumerate(ingot_files, start=1):
+            with PILImage.open(img_path) as img:
+                pil_img = img.convert("RGB")
+
+            frame_items.append((frame_index, img_path))
+            pil_images.append(pil_img)
+
+        image_load_time_ms = (time.perf_counter() - image_load_start) * 1000.0
+
+        if pil_images:
+            batch_inference_start = time.perf_counter()
+
+            predictions = ai_service.predict_pil_batch(
+                pil_images=pil_images,
+                threshold=threshold,
+                mode=mode,
+            )
+
+            batch_analysis_time_ms = (time.perf_counter() - batch_inference_start) * 1000.0
+            batch_inference_time_ms = batch_analysis_time_ms
+
+            if len(predictions) != len(frame_items):
+                raise RuntimeError(
+                    f"predict_pil_batch вернул {len(predictions)} результатов "
+                    f"для {len(frame_items)} кадров"
+                )
+
+            per_frame_analysis_time_ms = (
+                batch_analysis_time_ms / len(predictions)
+                if predictions
+                else 0.0
+            )
+
+            postprocess_start = time.perf_counter()
+
+            for (frame_index, img_path), pred in zip(frame_items, predictions):
+                if on_frame_metric:
+                    on_frame_metric(per_frame_analysis_time_ms)
+
+                handle_prediction(
+                    img_path=img_path,
+                    frame_index=frame_index,
+                    pred=pred,
+                    analysis_time_ms=per_frame_analysis_time_ms,
+                    batch_analysis_time_ms=batch_analysis_time_ms,
+                )
+
+            prediction_postprocess_time_ms = (
+                time.perf_counter() - postprocess_start
+            ) * 1000.0
+
+    else:
+        image_load_time_acc = 0.0
+        inference_time_acc = 0.0
+        postprocess_time_acc = 0.0
+
+        for frame_index, img_path in enumerate(ingot_files, start=1):
+            image_load_start = time.perf_counter()
+
+            with PILImage.open(img_path) as img:
+                pil_img = img.convert("RGB")
+
+            image_load_time_acc += (
+                time.perf_counter() - image_load_start
+            ) * 1000.0
+
+            inference_start = time.perf_counter()
+
+            pred = ai_service.predict_pil(
+                pil_img=pil_img,
+                threshold=threshold,
+                mode=mode,
+            )
+
+            analysis_time_ms = (time.perf_counter() - inference_start) * 1000.0
+            inference_time_acc += analysis_time_ms
+
+            if on_frame_metric:
+                on_frame_metric(analysis_time_ms)
+
+            postprocess_start = time.perf_counter()
+
+            handle_prediction(
+                img_path=img_path,
+                frame_index=frame_index,
+                pred=pred,
+                analysis_time_ms=analysis_time_ms,
+                batch_analysis_time_ms=None,
+            )
+
+            postprocess_time_acc += (
+                time.perf_counter() - postprocess_start
+            ) * 1000.0
+
+        image_load_time_ms = image_load_time_acc
+        batch_inference_time_ms = inference_time_acc
+        prediction_postprocess_time_ms = postprocess_time_acc
 
     verdict = "CRACK" if max_p_crack >= float(effective_threshold) else "OK"
 
     best_frame_saved = None
 
     if verdict == "CRACK" and best_frame_src:
+        best_frame_save_start = time.perf_counter()
+
         best_frame_saved = save_best_frame(
             src_path=best_frame_src,
             ingot_id=ingot_id,
             max_p_crack=max_p_crack,
         )
+
+        best_frame_save_time_ms = (
+            time.perf_counter() - best_frame_save_start
+        ) * 1000.0
 
     return {
         "ingot_id": ingot_id,
@@ -904,14 +1157,23 @@ def process_one_ingot(
         "best_frame_src": best_frame_src,
         "best_frame_saved": best_frame_saved,
         "best_frame_name": Path(best_frame_src).name if best_frame_src else None,
+
         "model_id": last_pred.get("model_id") if last_pred else None,
         "model_key": last_pred.get("model_key") if last_pred else None,
         "model_name": last_pred.get("model_name") if last_pred else None,
         "model_type": best_model_type or (last_pred.get("model_type") if last_pred else None),
         "architecture": last_pred.get("architecture") if last_pred else None,
+
         "best_bbox": best_bbox,
         "best_detections": best_detections,
         "bbox_count": len(best_detections),
+
+        "profiling": {
+            "image_load_time_ms": round(image_load_time_ms, 2),
+            "batch_inference_time_ms": round(batch_inference_time_ms, 2),
+            "prediction_postprocess_time_ms": round(prediction_postprocess_time_ms, 2),
+            "best_frame_save_time_ms": round(best_frame_save_time_ms, 2),
+        },
     }
 
 
@@ -920,10 +1182,12 @@ def save_one_ingot_result_to_db(
     result: dict,
     user_id: int | None = None,
     shift_id: int | None = None,
+    commit: bool = True,
 ):
     verdict = result["verdict"]
     has_defect = verdict == "CRACK"
     active_model_info = ai_service.get_active_model_runtime_info()
+    storage_upload_time_ms = 0.0
 
     inspection = Inspection(
         ingot_id=result["ingot_id"],
@@ -975,11 +1239,17 @@ def save_one_ingot_result_to_db(
         if result.get("best_frame_saved"):
             best_frame_path = Path(result["best_frame_saved"])
 
+            storage_upload_start = time.perf_counter()
+
             object_key = storage_service.upload_file(
                 local_file_path=best_frame_path,
                 object_prefix=f"best_frames/{result['ingot_id']}",
                 content_type="image/jpeg",
             )
+
+            storage_upload_time_ms = (
+                time.perf_counter() - storage_upload_start
+            ) * 1000.0
 
             image = InspectionImage(
                 file_path=object_key,
@@ -995,7 +1265,10 @@ def save_one_ingot_result_to_db(
 
             db.add(image)
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
     return {
         "inspection_id": inspection.id,
@@ -1005,7 +1278,65 @@ def save_one_ingot_result_to_db(
         "bbox": defect.bbox if defect else None,
         "detections": defect.detections if defect else [],
         "bbox_count": defect.bbox_count if defect else 0,
+        "storage_upload_time_ms": round(storage_upload_time_ms, 2),
     }
+
+
+def update_shift_stats_incremental(
+    db: Session,
+    shift_id: int,
+    result: dict,
+    commit: bool = True,
+):
+    shift = db.query(Shift).filter(Shift.id == shift_id).first()
+
+    if not shift:
+        return
+
+    old_processed = int(shift.processed_ingots or 0)
+    old_total_crack = int(shift.total_crack or 0)
+    old_total_ok = int(shift.total_ok or 0)
+
+    old_avg_max_p_crack = float(shift.avg_max_p_crack or 0.0)
+    old_avg_frames = float(shift.avg_frames or 0.0)
+
+    new_processed = old_processed + 1
+
+    verdict = result.get("verdict")
+    frames_count = int(result.get("frames_count") or 0)
+    max_p_crack = float(result.get("max_p_crack") or 0.0)
+
+    new_total_crack = old_total_crack + (1 if verdict == "CRACK" else 0)
+    new_total_ok = old_total_ok + (1 if verdict != "CRACK" else 0)
+
+    new_avg_max_p_crack = (
+        (old_avg_max_p_crack * old_processed + max_p_crack) / new_processed
+        if new_processed > 0
+        else 0.0
+    )
+
+    new_avg_frames = (
+        (old_avg_frames * old_processed + frames_count) / new_processed
+        if new_processed > 0
+        else 0.0
+    )
+
+    shift.processed_ingots = new_processed
+    shift.total_ingots = new_processed
+    shift.total_crack = new_total_crack
+    shift.total_ok = new_total_ok
+    shift.defect_rate = (
+        new_total_crack / new_processed * 100.0
+        if new_processed > 0
+        else 0.0
+    )
+    shift.avg_max_p_crack = new_avg_max_p_crack
+    shift.avg_frames = new_avg_frames
+
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def update_shift_stats(
