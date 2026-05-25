@@ -1,3 +1,4 @@
+# defect.py
 from sqlalchemy import (
     Column,
     Integer,
@@ -38,6 +39,7 @@ class Defect(Base):
     sent_to_mes_at = Column(DateTime, nullable=True)
     mes_status = Column(String(50), nullable=True)  
     mes_message = Column(Text, nullable=True)
+    mes_external_id = Column(String(100), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     inspection = relationship("Inspection", back_populates="defects")
     images = relationship(
@@ -45,3 +47,5 @@ class Defect(Base):
         back_populates="defect",
         cascade="all, delete-orphan"
     )
+    
+    

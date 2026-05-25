@@ -1,3 +1,4 @@
+# ai_service.py
 from pathlib import Path
 from threading import Lock
 from typing import Optional
@@ -6,7 +7,10 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
+torch.set_grad_enabled(False)
 
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
 from app.core.database import SessionLocal
 from app.models.ai_model import AiModel
 from ultralytics import YOLO
@@ -192,7 +196,112 @@ class AiService:
 
         if not already_loaded:
             self.reload_active_model()
+    @torch.no_grad()
+    def predict_pil_batch(
+        self,
+        pil_images: list[Image.Image],
+        threshold: Optional[float] = None,
+        mode: Optional[str] = None,
+    ):
+        """
+        Batch-инференс для classification / ResNet18.
 
+        Для detection / YOLO пока оставлен безопасный fallback:
+        кадры обрабатываются по одному через существующий predict_yolo,
+        чтобы не сломать detections, bbox, confidence и текущий формат результата.
+        """
+        self.ensure_model_loaded()
+
+        if not pil_images:
+            return []
+
+        actual_threshold = self.get_threshold_for_mode(
+            mode=mode,
+            threshold=threshold,
+        )
+
+        with self._lock:
+            model = self.model
+            tf = self.tf
+            classes = self.classes
+            device = self.device
+
+            model_id = self.active_model_id
+            model_key = self.active_model_key
+            model_name = self.active_model_name
+            model_type = self.active_model_type
+            architecture = self.active_architecture
+            default_mode = self.active_default_mode
+
+        if model_type == "detection":
+            return [
+                self._predict_yolo_pil(
+                    pil_img=pil_img,
+                    actual_threshold=actual_threshold,
+                    mode=mode,
+                )
+                for pil_img in pil_images
+            ]
+
+        if model_type != "classification":
+            raise RuntimeError(
+                f"predict_pil_batch поддерживает classification/ResNet18. "
+                f"Получено: {model_type}"
+            )
+
+        if model is None or tf is None or classes is None or device is None:
+            raise RuntimeError("Classification-модель не загружена корректно")
+
+        if "crack" not in classes or "ok" not in classes:
+            raise RuntimeError(f"Ожидались классы crack/ok, получено: {classes}")
+
+        tensors = [
+            tf(pil_img.convert("RGB"))
+            for pil_img in pil_images
+        ]
+
+        batch = torch.stack(tensors, dim=0).to(
+            device,
+            non_blocking=torch.cuda.is_available(),
+        )
+
+        with torch.inference_mode():
+            logits = model(batch)
+            probs_batch = torch.softmax(logits, dim=1).detach().cpu()
+
+        crack_idx = classes.index("crack")
+        ok_idx = classes.index("ok")
+
+        results = []
+
+        for probs_tensor in probs_batch:
+            probs = probs_tensor.tolist()
+
+            p_crack = float(probs[crack_idx])
+            p_ok = float(probs[ok_idx])
+
+            verdict = "CRACK" if p_crack >= actual_threshold else "OK"
+            confidence = p_crack if verdict == "CRACK" else p_ok
+
+            results.append({
+                "model_id": model_id,
+                "model_key": model_key,
+                "model_name": model_name,
+                "model_type": model_type,
+                "architecture": architecture,
+                "verdict": verdict,
+                "p_crack": p_crack,
+                "p_ok": p_ok,
+                "confidence": float(confidence),
+                "threshold": float(actual_threshold),
+                "mode": mode or default_mode or "balanced",
+                "classes": classes,
+                "detections": [],
+                "best_bbox": None,
+                "bbox_count": 0,
+            })
+
+        return results
     def get_threshold_for_mode(
         self,
         mode: Optional[str] = None,
@@ -377,10 +486,20 @@ class AiService:
                 actual_threshold=actual_threshold,
                 mode=mode,
             )
-        x = tf(pil_img).unsqueeze(0).to(device)
+        # x = tf(pil_img).unsqueeze(0).to(device)
 
-        logits = model(x)
-        probs_tensor = torch.softmax(logits, dim=1).squeeze(0).cpu()
+        # logits = model(x)
+        # probs_tensor = torch.softmax(logits, dim=1).squeeze(0).cpu()
+        # probs = probs_tensor.tolist()
+        x = tf(pil_img).unsqueeze(0).to(
+            device,
+            non_blocking=torch.cuda.is_available(),
+        )
+
+        with torch.inference_mode():
+            logits = model(x)
+            probs_tensor = torch.softmax(logits, dim=1).squeeze(0).cpu()
+
         probs = probs_tensor.tolist()
 
         crack_idx = classes.index("crack")

@@ -1,3 +1,4 @@
+// StatisticPage.js
 import "../styles/statistic.css";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TopNav from "../components/TopNav";
@@ -23,6 +24,7 @@ const INITIAL_FILTERS = {
   dateTo: "",
   shiftId: "all",
   defectStatus: "all",
+  modelFilter: "all",
 };
 
 const INITIAL_META = {
@@ -33,6 +35,7 @@ const INITIAL_META = {
   has_next: false,
   has_prev: false,
 };
+
 const NOTICE_TITLES = {
   success: "Готово",
   info: "Информация",
@@ -110,7 +113,9 @@ const Statistic = () => {
   const [summary, setSummary] = useState(null);
   const [shifts, setShifts] = useState([]);
   const [allShifts, setAllShifts] = useState([]);
-
+  const [chartShifts, setChartShifts] = useState([]);
+  const [modelStats, setModelStats] = useState([]);
+  const [modelOptions, setModelOptions] = useState([]);
   const [notification, setNotification] = useState(null);
   const notificationTimerRef = useRef(null);
 
@@ -126,39 +131,55 @@ const Statistic = () => {
       title: NOTICE_TITLES[type] || "Сообщение",
       show: true,
     });
-  
+
     if (notificationTimerRef.current) {
       clearTimeout(notificationTimerRef.current);
     }
-  
+
     notificationTimerRef.current = setTimeout(() => {
       setNotification((prev) => (prev ? { ...prev, show: false } : null));
-  
+
       setTimeout(() => {
         setNotification(null);
       }, 250);
     }, 2800);
   };
 
-  const buildStatsParams = (sourceFilters) => {
+  const buildStatsParams = (sourceFilters, includeModelFilter = true) => {
     const params = {};
-
+  
     if (sourceFilters.dateFrom) {
       params.date_from = sourceFilters.dateFrom;
     }
-
+  
     if (sourceFilters.dateTo) {
       params.date_to = sourceFilters.dateTo;
     }
-
+  
     if (sourceFilters.shiftId && sourceFilters.shiftId !== "all") {
       params.shift_id = sourceFilters.shiftId;
     }
-
+  
     if (sourceFilters.defectStatus && sourceFilters.defectStatus !== "all") {
       params.defect_status = sourceFilters.defectStatus;
     }
-
+  
+    if (includeModelFilter) {
+      const modelFilter = sourceFilters.modelFilter || "all";
+  
+      if (modelFilter.startsWith("id:")) {
+        params.ai_model_id = modelFilter.replace("id:", "");
+      }
+  
+      if (modelFilter.startsWith("type:")) {
+        params.ai_model_type = modelFilter.replace("type:", "");
+      }
+  
+      if (modelFilter.startsWith("key:")) {
+        params.ai_model_key = modelFilter.replace("key:", "");
+      }
+    }
+  
     return params;
   };
 
@@ -171,6 +192,7 @@ const Statistic = () => {
 
     try {
       const baseParams = buildStatsParams(nextFilters);
+      const modelOptionsParams = buildStatsParams(nextFilters, false);
 
       const shiftsParams = {
         ...baseParams,
@@ -178,18 +200,47 @@ const Statistic = () => {
         page_size: nextPageSize,
       };
 
-      const [summaryData, shiftsData, allShiftsData] = await Promise.all([
+      const chartShiftsParams = {
+        ...baseParams,
+        page: 1,
+        page_size: 100,
+      };
+
+      const modelStatsPromise =
+        typeof api.getModelStats === "function"
+          ? api.getModelStats(baseParams)
+          : Promise.resolve([]);
+      const modelOptionsPromise =
+        typeof api.getModelStats === "function"
+          ? api.getModelStats(modelOptionsParams)
+          : Promise.resolve([]);
+
+      const [
+        summaryData,
+        shiftsData,
+        chartShiftsData,
+        allShiftsData,
+        modelStatsData,
+        modelOptionsData,
+      ] = await Promise.all([
         api.getStatsSummary(baseParams),
         api.getShiftsStats(shiftsParams),
+        api.getShiftsStats(chartShiftsParams),
         api.getShiftsStats({ page: 1, page_size: 100 }),
+        modelStatsPromise,
+        modelOptionsPromise,
       ]);
 
       setSummary(summaryData || null);
       setShifts(Array.isArray(shiftsData?.items) ? shiftsData.items : []);
+      setChartShifts(
+        Array.isArray(chartShiftsData?.items) ? chartShiftsData.items : []
+      );
       setAllShifts(
         Array.isArray(allShiftsData?.items) ? allShiftsData.items : []
       );
-
+      setModelStats(Array.isArray(modelStatsData) ? modelStatsData : []);
+      setModelOptions(Array.isArray(modelOptionsData) ? modelOptionsData : []);
       setShiftsMeta({
         total: getNumber(shiftsData?.total),
         page: getNumber(shiftsData?.page, nextPage),
@@ -344,7 +395,7 @@ const Statistic = () => {
   );
 
   const chartData = useMemo(() => {
-    return [...shifts]
+    return [...chartShifts]
       .slice(0, 8)
       .reverse()
       .map((shift) => {
@@ -389,8 +440,105 @@ const Statistic = () => {
           ),
         };
       });
-  }, [shifts]);
+  }, [chartShifts]);
 
+  const modelChartData = useMemo(() => {
+    return [...modelStats]
+      .map((item) => {
+        const modelName =
+          item.model_architecture && item.model_architecture !== "—"
+            ? item.model_architecture
+            : item.model_name || item.model_key || "Модель";
+
+        const fullName = item.model_name || modelName;
+        const modelType = String(item.model_type || "").toLowerCase();
+
+        const confirmedStatus = getNumber(
+          item.engineer_confirmed_status_count
+        );
+
+        const sentToMes = getNumber(item.engineer_sent_to_mes_count);
+
+        return {
+          name: modelName,
+          fullName,
+          modelType,
+
+          aiChecked: getNumber(item.ai_checked_count),
+          aiOk: getNumber(item.ai_ok_count),
+          aiCrack: getNumber(item.ai_crack_count),
+          aiDefectRate: getNumber(item.ai_defect_rate),
+
+          engineerPending: getNumber(item.engineer_pending_count),
+          engineerConfirmedStatus: confirmedStatus,
+          engineerRejected: getNumber(item.engineer_rejected_count),
+          engineerSentToMes: sentToMes,
+          engineerConfirmedTotal:
+            item.engineer_confirmed_count !== undefined &&
+            item.engineer_confirmed_count !== null
+              ? getNumber(item.engineer_confirmed_count)
+              : confirmedStatus + sentToMes,
+
+          falseAlarmRateReviewed: getNumber(item.false_alarm_rate_reviewed),
+          engineerConfirmationRate: getNumber(item.engineer_confirmation_rate),
+
+          avgAiScore: getOptionalNumber(item.avg_max_p_crack_ai_defects),
+          avgConfirmedScore: getOptionalNumber(
+            item.avg_max_p_crack_confirmed_defects
+          ),
+
+          avgBboxCount: getOptionalNumber(item.avg_bbox_count),
+        };
+      })
+      .sort((a, b) => b.aiChecked - a.aiChecked);
+  }, [modelStats]);
+
+  const resnetModelChartData = useMemo(() => {
+    return modelChartData.filter((item) => {
+      const searchText = `${item.name} ${item.fullName} ${item.modelType}`.toLowerCase();
+
+      return item.modelType === "classification" || searchText.includes("resnet");
+    });
+  }, [modelChartData]);
+
+  const yoloModelChartData = useMemo(() => {
+    return modelChartData.filter((item) => {
+      const searchText = `${item.name} ${item.fullName} ${item.modelType}`.toLowerCase();
+
+      return item.modelType === "detection" || searchText.includes("yolo");
+    });
+  }, [modelChartData]);
+  const modelFilterOptions = useMemo(() => {
+    return [...modelOptions]
+      .filter((item) => item.model_id || item.model_key)
+      .map((item) => {
+        const modelName =
+          item.model_name ||
+          item.model_architecture ||
+          item.model_key ||
+          "Модель";
+  
+        const modelType = String(item.model_type || "").toLowerCase();
+  
+        const value = item.model_id
+          ? `id:${item.model_id}`
+          : `key:${item.model_key}`;
+  
+        const typeText =
+          modelType === "classification"
+            ? "классификация"
+            : modelType === "detection"
+            ? "детекция"
+            : "тип не указан";
+  
+        return {
+          value,
+          label: `${modelName} — ${typeText}`,
+          checked: getNumber(item.ai_checked_count),
+        };
+      })
+      .sort((a, b) => b.checked - a.checked);
+  }, [modelOptions]);
   const statusChartData = useMemo(() => {
     return [
       { name: "Ожидает", value: pendingStatusCount, color: "#fbbf24" },
@@ -434,17 +582,17 @@ const Statistic = () => {
 
       <FloatingNotice notice={notification} />
 
-        {isLoading && (
-          <FloatingNotice
-            notice={{
-              message: "Загрузка статистики...",
-              type: "info",
-              title: "Информация",
-              show: true,
-            }}
-            offset={notification ? 96 : 0}
-          />
-        )}
+      {isLoading && (
+        <FloatingNotice
+          notice={{
+            message: "Загрузка статистики...",
+            type: "info",
+            title: "Информация",
+            show: true,
+          }}
+          offset={notification ? 96 : 0}
+        />
+      )}
 
       <div className="statistic-container">
         <TopNav
@@ -454,11 +602,10 @@ const Statistic = () => {
         />
 
         <div className="statistic-main-content">
-          <div className="statistic-filters-panel">
+          <section className="statistic-filters-panel">
             <div className="statistic-filters-flex">
               <div className="statistic-filter-group">
                 <label className="statistic-filter-label">Дата с</label>
-
                 <input
                   type="date"
                   className="statistic-filter-select"
@@ -471,7 +618,6 @@ const Statistic = () => {
 
               <div className="statistic-filter-group">
                 <label className="statistic-filter-label">Дата по</label>
-
                 <input
                   type="date"
                   className="statistic-filter-select"
@@ -484,7 +630,6 @@ const Statistic = () => {
 
               <div className="statistic-filter-group">
                 <label className="statistic-filter-label">Смена</label>
-
                 <select
                   className="statistic-filter-select"
                   value={filters.shiftId}
@@ -501,12 +646,28 @@ const Statistic = () => {
                   ))}
                 </select>
               </div>
-
               <div className="statistic-filter-group">
-                <label className="statistic-filter-label">
-                  Статус события
-                </label>
+                <label className="statistic-filter-label">Модель</label>
 
+                <select
+                  className="statistic-filter-select"
+                  value={filters.modelFilter}
+                  onChange={(e) => handleFilterChange("modelFilter", e.target.value)}
+                >
+                  <option value="all">Все модели</option>
+                  <option value="type:classification">Все ResNet / классификация</option>
+                  <option value="type:detection">Все YOLO / детекция</option>
+
+                  {modelFilterOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* <div className="statistic-filter-group">
+                <label className="statistic-filter-label">Статус события</label>
                 <select
                   className="statistic-filter-select"
                   value={filters.defectStatus}
@@ -520,10 +681,11 @@ const Statistic = () => {
                   <option value="rejected">Отклонено</option>
                   <option value="sent_to_mes">Передано в MES</option>
                 </select>
-              </div>
+              </div> */}
 
               <div className="statistic-filter-buttons">
                 <button
+                  type="button"
                   className="statistic-filter-btn statistic-filter-btn-primary"
                   onClick={applyFilters}
                   disabled={isLoading}
@@ -532,6 +694,7 @@ const Statistic = () => {
                 </button>
 
                 <button
+                  type="button"
                   className="statistic-filter-btn statistic-filter-btn-secondary"
                   onClick={resetFilters}
                   disabled={isLoading}
@@ -540,7 +703,7 @@ const Statistic = () => {
                 </button>
               </div>
             </div>
-          </div>
+          </section>
 
           <div className="statistic-dashboard-grid">
             <section className="statistic-section statistic-kpi-section">
@@ -548,8 +711,7 @@ const Statistic = () => {
                 <div>
                   <h2>Общая статистика контроля</h2>
                   <p>
-                    Период: {getPeriodText()}. AI-результат и решение инженера
-                    считаются отдельно.
+                    Период: {getPeriodText()}. 
                   </p>
                 </div>
               </div>
@@ -639,10 +801,7 @@ const Statistic = () => {
               <div className="statistic-section-header">
                 <div>
                   <h2>Динамика по сменам</h2>
-                  <p>
-                    Отдельно показаны решения AI-модели и результаты проверки
-                    инженером.
-                  </p>
+                 
                 </div>
               </div>
 
@@ -798,6 +957,16 @@ const Statistic = () => {
                     <div className="statistic-chart-empty">
                       Нет данных для графика
                     </div>
+                  ) : chartData.every(
+                      (item) =>
+                        item.avgMaxPCrackAiDefects === null &&
+                        item.avgMaxPCrackConfirmedDefects === null
+                    ) ? (
+                    <div className="statistic-chart-empty">
+                      Нет данных max_p_crack по сменам. Проверь, что /stats/shifts
+                      возвращает avg_max_p_crack_ai_defects и
+                      avg_max_p_crack_confirmed_defects.
+                    </div>
                   ) : (
                     <ResponsiveContainer width="100%" height={230}>
                       <LineChart data={chartData}>
@@ -863,6 +1032,33 @@ const Statistic = () => {
               </div>
             </section>
 
+            {/* <section className="statistic-section">
+              <div className="statistic-section-header">
+                <div>
+                  <h2>Сравнение моделей</h2>
+                  <p>
+                    Отдельная сводка для классификационных моделей ResNet и
+                    detection-моделей YOLO.
+                  </p>
+                </div>
+              </div>
+
+              <div className="statistic-models-grid">
+                <ModelStatsBlock
+                  title="ResNet / классификация"
+                  data={resnetModelChartData}
+                  emptyText="Нет данных по классификационным моделям."
+                />
+
+                <ModelStatsBlock
+                  title="YOLO / детекция"
+                  data={yoloModelChartData}
+                  emptyText="Нет данных по YOLO-моделям."
+                 
+                />
+              </div>
+            </section> */}
+
             <div className="statistic-lower-grid">
               <section className="statistic-section">
                 <div className="statistic-section-header">
@@ -873,60 +1069,60 @@ const Statistic = () => {
                 </div>
 
                 <div className="statistic-recent-shifts">
-                  {shifts.slice(0, 5).map((shift) => {
-                    const shiftConfirmedTotal =
-                      shift.engineer_confirmed_count !== undefined &&
-                      shift.engineer_confirmed_count !== null
-                        ? getNumber(shift.engineer_confirmed_count)
-                        : getNumber(
-                            shift.engineer_confirmed_status_count ??
-                              shift.defects_confirmed
-                          ) +
-                          getNumber(
-                            shift.engineer_sent_to_mes_count ??
-                              shift.defects_sent_to_mes
-                          );
-
-                    return (
-                      <div
-                        className="statistic-shift-row"
-                        key={shift.shift_id}
-                      >
-                        <div className="statistic-shift-main">
-                          <strong>Смена #{shift.shift_id}</strong>
-                          <span>{formatDate(shift.started_at)}</span>
-                        </div>
-
-                        <div className="statistic-shift-metrics">
-                          <div>
-                            <strong>{shift.processed_ingots}</strong>
-                            <span>слитков</span>
-                          </div>
-
-                          <div>
-                            <strong className="statistic-danger-text">
-                              {getNumber(
-                                shift.ai_crack_count ?? shift.total_crack
-                              )}
-                            </strong>
-                            <span>AI CRACK</span>
-                          </div>
-
-                          <div>
-                            <strong className="statistic-success-text">
-                              {shiftConfirmedTotal.toLocaleString()}
-                            </strong>
-                            <span>подтв.</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {shifts.length === 0 && (
+                  {shifts.length === 0 ? (
                     <div className="statistic-empty-text">
                       Смены пока не найдены
                     </div>
+                  ) : (
+                    shifts.slice(0, 5).map((shift) => {
+                      const shiftConfirmedTotal =
+                        shift.engineer_confirmed_count !== undefined &&
+                        shift.engineer_confirmed_count !== null
+                          ? getNumber(shift.engineer_confirmed_count)
+                          : getNumber(
+                              shift.engineer_confirmed_status_count ??
+                                shift.defects_confirmed
+                            ) +
+                            getNumber(
+                              shift.engineer_sent_to_mes_count ??
+                                shift.defects_sent_to_mes
+                            );
+
+                      return (
+                        <div
+                          className="statistic-shift-row"
+                          key={shift.shift_id}
+                        >
+                          <div className="statistic-shift-main">
+                            <strong>Смена #{shift.shift_id}</strong>
+                            <span>{formatDate(shift.started_at)}</span>
+                          </div>
+
+                          <div className="statistic-shift-metrics">
+                            <div>
+                              <strong>{getNumber(shift.processed_ingots)}</strong>
+                              <span>слитков</span>
+                            </div>
+
+                            <div>
+                              <strong className="statistic-danger-text">
+                                {getNumber(
+                                  shift.ai_crack_count ?? shift.total_crack
+                                )}
+                              </strong>
+                              <span>AI CRACK</span>
+                            </div>
+
+                            <div>
+                              <strong className="statistic-success-text">
+                                {shiftConfirmedTotal.toLocaleString()}
+                              </strong>
+                              <span>подтв.</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </section>
@@ -1018,7 +1214,7 @@ const Statistic = () => {
                           <td>{formatDate(shift.finished_at)}</td>
                           <td>{shift.mode || "—"}</td>
                           <td>{formatDecimal(shift.threshold, 3)}</td>
-                          <td>{shift.processed_ingots}</td>
+                          <td>{getNumber(shift.processed_ingots)}</td>
                           <td>{getNumber(shift.ai_ok_count ?? shift.total_ok)}</td>
                           <td>
                             {getNumber(shift.ai_crack_count ?? shift.total_crack)}
@@ -1068,10 +1264,7 @@ const Statistic = () => {
                             %
                           </td>
                           <td>
-                            {formatDecimal(
-                              shift.avg_max_p_crack_ai_defects,
-                              3
-                            )}
+                            {formatDecimal(shift.avg_max_p_crack_ai_defects, 3)}
                           </td>
                           <td>
                             {formatDecimal(
@@ -1106,6 +1299,7 @@ const Statistic = () => {
                     </select>
 
                     <button
+                      type="button"
                       className="statistic-page-btn"
                       disabled={!shiftsMeta.has_prev}
                       onClick={() => goToShiftPage(1)}
@@ -1114,6 +1308,7 @@ const Statistic = () => {
                     </button>
 
                     <button
+                      type="button"
                       className="statistic-page-btn"
                       disabled={!shiftsMeta.has_prev}
                       onClick={() => goToShiftPage(shiftsMeta.page - 1)}
@@ -1133,6 +1328,7 @@ const Statistic = () => {
                             )}
 
                             <button
+                              type="button"
                               className={`statistic-page-number ${
                                 page === shiftsMeta.page ? "active" : ""
                               }`}
@@ -1146,6 +1342,7 @@ const Statistic = () => {
                     </div>
 
                     <button
+                      type="button"
                       className="statistic-page-btn"
                       disabled={!shiftsMeta.has_next}
                       onClick={() => goToShiftPage(shiftsMeta.page + 1)}
@@ -1154,6 +1351,7 @@ const Statistic = () => {
                     </button>
 
                     <button
+                      type="button"
                       className="statistic-page-btn"
                       disabled={!shiftsMeta.has_next}
                       onClick={() => goToShiftPage(shiftsMeta.total_pages)}
@@ -1201,6 +1399,91 @@ function ChartCard({ title, children }) {
       </div>
 
       {children}
+    </div>
+  );
+}
+
+function ModelStatsBlock({ title, data, emptyText }) {
+  return (
+    <div className="statistic-model-block">
+      <div className="statistic-chart-card-header">
+        <h3>{title}</h3>
+      </div>
+
+      {data.length === 0 ? (
+        <div className="statistic-chart-empty">{emptyText}</div>
+      ) : (
+        <div className="statistic-model-block-content">
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(180, 210, 240, 0.14)"
+              />
+              <XAxis dataKey="name" stroke="#8fb4d9" />
+              <YAxis
+                stroke="#8fb4d9"
+                domain={[0, 100]}
+                tickFormatter={(value) => `${value}%`}
+              />
+              <Tooltip content={<StatsTooltip suffix="%" />} />
+              <Legend />
+
+              <Bar
+                dataKey="aiDefectRate"
+                name="AI деф."
+                fill="#ef4444"
+                radius={[6, 6, 0, 0]}
+              />
+
+              <Bar
+                dataKey="engineerConfirmationRate"
+                name="Подтв."
+                fill="#22c55e"
+                radius={[6, 6, 0, 0]}
+              />
+
+              <Bar
+                dataKey="falseAlarmRateReviewed"
+                name="Ложн."
+                fill="#fbbf24"
+                radius={[6, 6, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+
+          <div className="statistic-model-mini-list">
+            {data.map((item) => (
+              <div className="statistic-model-mini-row" key={item.fullName}>
+                <div>
+                  <strong>{item.fullName}</strong>
+                  <span>{item.modelType || "тип модели не указан"}</span>
+                </div>
+
+                <div>
+                  <span>Проверено</span>
+                  <strong>{item.aiChecked.toLocaleString()}</strong>
+                </div>
+
+                <div>
+                  <span>AI деф.</span>
+                  <strong>{item.aiDefectRate.toFixed(2)}%</strong>
+                </div>
+
+                <div>
+                  <span>Подтв.</span>
+                  <strong>{item.engineerConfirmationRate.toFixed(2)}%</strong>
+                </div>
+
+                <div>
+                  <span>Ложн.</span>
+                  <strong>{item.falseAlarmRateReviewed.toFixed(2)}%</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,3 +28,4 @@ class Image(Base):
     created_at = Column(DateTime, server_default=func.now())
     inspection = relationship("Inspection", back_populates="images")
     defect = relationship("Defect", back_populates="images")
+    

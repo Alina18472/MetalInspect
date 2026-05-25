@@ -1,3 +1,4 @@
+// Api.js
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000";
 
 function getToken() {
@@ -125,23 +126,27 @@ export const api = {
       method: "POST",
     }),
 
-  startShift: ({ mode = null, threshold = null, delaySec = 0.7 } = {}) => {
-  const params = new URLSearchParams();
-
-  params.set("delay_sec", String(delaySec));
-
-  if (mode !== null && mode !== undefined && mode !== "") {
-    params.set("mode", String(mode));
-  }
-
-  if (threshold !== null && threshold !== undefined && threshold !== "") {
-    params.set("threshold", String(threshold));
-  }
-
-  return request(`/ai/shift/start?${params.toString()}`, {
-    method: "POST",
-  });
-},
+    startShift: ({ mode = null, threshold = null, delaySec = 0 } = {}) => {
+      const params = new URLSearchParams();
+    
+      if (mode !== null && mode !== undefined && mode !== "") {
+        params.set("mode", String(mode));
+      }
+    
+      if (threshold !== null && threshold !== undefined && threshold !== "") {
+        params.set("threshold", String(threshold));
+      }
+    
+      if (delaySec !== null && delaySec !== undefined && delaySec !== "") {
+        params.set("delay_sec", String(delaySec));
+      }
+    
+      const query = params.toString();
+    
+      return request(`/ai/shift/start${query ? `?${query}` : ""}`, {
+        method: "POST",
+      });
+    },
 
   getShiftStatus: () =>
     request("/ai/shift/status", {
@@ -153,7 +158,7 @@ export const api = {
       method: "POST",
     }),
 
-  startCamera: ({ delaySec = 0.25 } = {}) =>
+  startCamera: ({ delaySec =  1 / 15  } = {}) =>
     request(`/ai/camera/start?delay_sec=${encodeURIComponent(delaySec)}`, {
       method: "POST",
     }),
@@ -271,8 +276,11 @@ export const api = {
     }),
   
   
-
-  
+  getModelStats: (params = {}) =>
+    request(`/stats/models${buildQuery(params)}`, {
+      method: "GET",
+    }),
+    
   
 };
 

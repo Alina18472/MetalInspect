@@ -764,3 +764,122 @@
     width: auto;
   }
 }
+
+.statistic-floating-notice {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  z-index: 99999;
+  width: min(420px, calc(100vw - 40px));
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(18, 30, 44, 0.96);
+  border: 1px solid rgba(77, 171, 247, 0.35);
+  border-left: 4px solid #4dabf7;
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(60, 120, 180, 0.16);
+  backdrop-filter: blur(12px);
+  transform: translateX(calc(100% + 40px));
+  opacity: 0;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.statistic-floating-notice.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.statistic-floating-notice strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.statistic-floating-notice p {
+  margin: 0;
+  color: #b8cce0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.statistic-filters-flex {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.statistic-filter-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-self: end;
+  flex-wrap: wrap;
+}
+
+.statistic-filter-btn {
+  min-width: 128px;
+  justify-content: center;
+}
+
+.statistic-models-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.statistic-models-grid .statistic-chart-card {
+  min-height: 320px;
+}
+
+.statistic-summary-card {
+  min-width: 0;
+}
+
+.statistic-summary-content {
+  min-width: 0;
+}
+
+.statistic-summary-label {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1500px) {
+  .statistic-models-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .statistic-models-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .statistic-floating-notice {
+    top: 80px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+
+  .statistic-filter-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .statistic-filter-btn {
+    width: 100%;
+  }
+
+  .statistic-models-grid {
+    padding: 12px;
+  }
+}

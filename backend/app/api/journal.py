@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-
+from app.schemas.mes import MesDefectPayload
+from app.services.mes_service import mock_mes_service
 from app.models.user import User
 from app.models.inspection import Inspection
 from app.models.defect import Defect
@@ -469,7 +470,8 @@ def send_defect_to_mes(
             "id": defect.id,
             "inspection_id": defect.inspection_id,
             "status": defect.status,
-            "mes_status": defect.mes_status or "sent",
+            "mes_status": defect.mes_status or "accepted",
+            "mes_external_id": getattr(defect, "mes_external_id", None),
             "sent_to_mes_at": defect.sent_to_mes_at.isoformat(timespec="seconds")
             if defect.sent_to_mes_at
             else None,
@@ -477,20 +479,34 @@ def send_defect_to_mes(
             "message": "Дефект уже был передан в MES",
         }
 
-    mes_payload = {
-        "defect_id": defect.id,
-        "inspection_id": inspection.id,
-        "shift_id": inspection.shift_id,
-        "ingot_id": inspection.ingot_id,
-        "source_ingot_id": inspection.source_ingot_id,
-        "defect_type": defect.defect_type or "crack",
-        "max_p_crack": float(inspection.max_p_crack or 0),
-        "threshold": float(inspection.threshold or 0),
-        "verdict": inspection.verdict,
-        "ai_model_key": inspection.ai_model_key,
-        "ai_model_name": inspection.ai_model_name,
-        "sent_by": current_user.id,
-    }
+    mes_payload = MesDefectPayload(
+        defect_id=defect.id,
+        inspection_id=inspection.id,
+        shift_id=inspection.shift_id,
+        ingot_id=inspection.ingot_id,
+        source_ingot_id=inspection.source_ingot_id,
+        defect_type=defect.defect_type or "crack",
+        confidence=float(defect.confidence or 0),
+        max_p_crack=float(inspection.max_p_crack or 0),
+        threshold=float(inspection.threshold or 0),
+        verdict=inspection.verdict,
+        ai_model_key=inspection.ai_model_key,
+        ai_model_name=inspection.ai_model_name,
+        ai_model_type=inspection.ai_model_type,
+        ai_model_architecture=inspection.ai_model_architecture,
+        sent_by=current_user.id,
+    )
+
+    try:
+        mes_response = mock_mes_service.send_defect(
+            db=db,
+            payload=mes_payload,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ошибка передачи дефекта в mock-MES: {e}",
+        )
 
     defect.status = "sent_to_mes"
     defect.is_confirmed = True
@@ -502,10 +518,14 @@ def send_defect_to_mes(
         defect.confirmed_at = datetime.utcnow()
 
     defect.sent_to_mes_at = datetime.utcnow()
-    defect.mes_status = "sent"
-    defect.mes_message = (
-        f"Имитация передачи в MES выполнена. "
-        f"Слиток {inspection.ingot_id}, дефект #{defect.id}."
+    defect.mes_status = mes_response.get("mes_status", "accepted")
+
+    if hasattr(defect, "mes_external_id"):
+        defect.mes_external_id = mes_response.get("mes_event_id")
+
+    defect.mes_message = mes_response.get(
+        "message",
+        f"Дефект #{defect.id} передан в mock-MES",
     )
 
     db.commit()
@@ -516,10 +536,12 @@ def send_defect_to_mes(
         "inspection_id": defect.inspection_id,
         "status": defect.status,
         "mes_status": defect.mes_status,
+        "mes_external_id": getattr(defect, "mes_external_id", None),
         "sent_to_mes_at": defect.sent_to_mes_at.isoformat(timespec="seconds")
         if defect.sent_to_mes_at
         else None,
         "mes_message": defect.mes_message,
-        "payload": mes_payload,
-        "message": "Дефект передан в MES",
+        "payload": mes_response.get("payload"),
+        "mes_response": mes_response,
+        "message": "Дефект передан в mock-MES",
     }

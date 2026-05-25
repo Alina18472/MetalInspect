@@ -1,10 +1,12 @@
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "../styles/dashboard.css";
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
 
-const CAMERA_DELAY_SEC = 0.25;
-const SHIFT_DELAY_SEC = 0.7;
+const TARGET_CAMERA_FPS = 15;
+const CAMERA_DELAY_SEC = Number((1 / TARGET_CAMERA_FPS).toFixed(4));
+const SHIFT_ANALYSIS_DELAY_SEC = 0;
 
 const resolveImageUrl = (url) => {
   if (!url) return null;
@@ -62,7 +64,10 @@ const getRenderedImageBox = (img) => {
 const Dashboard = () => {
   const [shiftStatus, setShiftStatus] = useState(null);
   const [cameraStatus, setCameraStatus] = useState(null);
-  const [liveFrame, setLiveFrame] = useState(null);
+
+  const [cameraFrame, setCameraFrame] = useState(null);
+  const [analysisFrame, setAnalysisFrame] = useState(null);
+
   const [wsConnected, setWsConnected] = useState(false);
 
   const [eventsData, setEventsData] = useState([]);
@@ -279,8 +284,12 @@ const Dashboard = () => {
       try {
         const data = JSON.parse(event.data);
 
-        if (data.type === "camera_frame" || data.type === "analysis_frame") {
-          setLiveFrame(data);
+        if (data.type === "camera_frame") {
+          setCameraFrame(data);
+        }
+
+        if (data.type === "analysis_frame") {
+          setAnalysisFrame(data);
         }
 
         if (
@@ -400,7 +409,7 @@ const Dashboard = () => {
 
     try {
       await api.startShift({
-        delaySec: SHIFT_DELAY_SEC,
+        delaySec: SHIFT_ANALYSIS_DELAY_SEC,
       });
 
       await loadDashboardData();
@@ -635,7 +644,24 @@ const Dashboard = () => {
   const modalStyle = isModalOpen ? { display: "flex" } : { display: "none" };
 
   const liveFrameName =
-    liveFrame?.frame_name || cameraStatus?.current_frame_name;
+    cameraFrame?.frame_name || cameraStatus?.current_frame_name;
+
+  const cameraSourceIngotId =
+    cameraFrame?.ingot_id || cameraStatus?.current_ingot || null;
+
+  const analysisFrameName = analysisFrame?.frame_name || null;
+  const analysisSourceIngotId = analysisFrame?.source_ingot_id || null;
+
+  const analysisMatchesCamera = Boolean(
+    liveFrameName &&
+      analysisFrameName &&
+      liveFrameName === analysisFrameName &&
+      (!cameraSourceIngotId ||
+        !analysisSourceIngotId ||
+        cameraSourceIngotId === analysisSourceIngotId)
+  );
+
+  const visibleAnalysisFrame = analysisMatchesCamera ? analysisFrame : null;
 
   const isSourceIngotId = (value) => {
     if (!value) return false;
@@ -643,12 +669,10 @@ const Dashboard = () => {
   };
 
   const displayIngotId =
-    liveFrame?.system_ingot_id ||
-    liveFrame?.inspection_ingot_id ||
-    liveFrame?.current_ingot_id ||
-    shiftStatus?.current_ingot_id ||
+    shiftStatus?.current_ingot ||
     shiftStatus?.current_system_ingot_id ||
     shiftStatus?.last_result?.ingot_id ||
+    cameraSourceIngotId ||
     null;
 
   const safeDisplayIngotId =
@@ -656,21 +680,18 @@ const Dashboard = () => {
       ? displayIngotId
       : shiftStatus?.running
       ? "Формируется..."
-      : "—";
+      : cameraSourceIngotId || "—";
 
   const liveFrameIndex =
-    liveFrame?.frame_index || cameraStatus?.current_frame_index;
+    cameraFrame?.frame_index || cameraStatus?.current_frame_index;
 
-  const livePCrack =
-    liveFrame?.p_crack ?? shiftStatus?.current_p_crack ?? null;
+  const livePCrack = visibleAnalysisFrame?.p_crack ?? null;
 
-  const liveVerdict =
-    liveFrame?.frame_verdict || shiftStatus?.current_frame_verdict || null;
+  const liveVerdict = visibleAnalysisFrame?.frame_verdict || null;
 
   const getLiveDetections = () => {
-    if (Array.isArray(liveFrame?.detections)) return liveFrame.detections;
-    if (Array.isArray(shiftStatus?.current_detections)) {
-      return shiftStatus.current_detections;
+    if (Array.isArray(visibleAnalysisFrame?.detections)) {
+      return visibleAnalysisFrame.detections;
     }
 
     return [];
@@ -833,8 +854,8 @@ const Dashboard = () => {
   const cameraRunning = Boolean(cameraStatus?.running);
   const shiftRunning = Boolean(shiftStatus?.running);
 
-  const liveImageUrl = liveFrame?.frame_url
-    ? resolveImageUrl(liveFrame.frame_url)
+  const liveImageUrl = cameraFrame?.frame_url
+    ? resolveImageUrl(cameraFrame.frame_url)
     : cameraStatus?.current_frame_url
     ? resolveImageUrl(cameraStatus.current_frame_url)
     : latestEvent?.bestFrameUrl || null;
@@ -847,7 +868,7 @@ const Dashboard = () => {
     "—";
 
   const modelType =
-    liveFrame?.model_type ||
+    analysisFrame?.model_type ||
     shiftStatus?.active_model_type ||
     activeModel?.model_type ||
     "—";
@@ -865,10 +886,7 @@ const Dashboard = () => {
       : "—";
 
   const liveBboxCount =
-    liveFrame?.bbox_count ??
-    shiftStatus?.current_bbox_count ??
-    getLiveDetections().length ??
-    0;
+    visibleAnalysisFrame?.bbox_count ?? getLiveDetections().length ?? 0;
 
   const normalizedLiveVerdict = String(liveVerdict || "").toUpperCase();
 
@@ -877,7 +895,9 @@ const Dashboard = () => {
       ? "DEFECT"
       : normalizedLiveVerdict === "OK"
       ? "OK"
-      : "ANALYSIS"
+      : "CAMERA"
+    : cameraRunning
+    ? "CAMERA"
     : "IDLE";
 
   const liveStatusClass =
@@ -885,7 +905,7 @@ const Dashboard = () => {
       ? "danger"
       : liveStatusText === "OK"
       ? "success"
-      : shiftRunning
+      : cameraRunning
       ? "primary"
       : "muted";
 
@@ -1111,6 +1131,16 @@ const Dashboard = () => {
                 <div className="status-row">
                   <span>Обработано</span>
                   <strong>{processedIngots}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Очередь анализа</span>
+                  <strong>{shiftStatus?.analysis_queue_size ?? "—"}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Буфер кадров</span>
+                  <strong>{shiftStatus?.buffered_frames_count ?? "—"}</strong>
                 </div>
 
                 <div className="status-row">
@@ -1542,7 +1572,9 @@ const Dashboard = () => {
                   onClick={confirmSendToMes}
                   disabled={mesConfirmModal.isSubmitting}
                 >
-                  {mesConfirmModal.isSubmitting ? "Передача..." : "Передать в MES"}
+                  {mesConfirmModal.isSubmitting
+                    ? "Передача..."
+                    : "Передать в MES"}
                 </button>
               </div>
             </div>

@@ -1,3 +1,4 @@
+# api/ai_models.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -104,7 +105,7 @@ def create_ai_model(
                 status_code=400,
                 detail=f"Model weights file not found: {weights_path}",
             )
-
+    validate_modes(data.modes, data.model_type)
     model = AiModel(
         model_key=data.model_key,
         name=data.name,
@@ -298,3 +299,50 @@ def get_active_model_runtime(
     current_user: User = Depends(get_current_user),
 ):
     return ai_service.get_active_model_runtime_info()
+
+def validate_probability(value, field_name: str):
+    if value is None:
+        return
+
+    if not 0 <= float(value) <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} must be in range 0..1",
+        )
+
+
+def validate_modes(modes: dict | None, model_type: str):
+    if modes is None:
+        return
+
+    if not isinstance(modes, dict):
+        raise HTTPException(status_code=400, detail="modes must be object")
+
+    for mode_key, mode_value in modes.items():
+        if mode_key not in {"strict", "balanced", "sensitive"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid mode '{mode_key}'. Allowed: strict, balanced, sensitive",
+            )
+
+        if not isinstance(mode_value, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Mode '{mode_key}' must be object",
+            )
+
+        if model_type == "classification":
+            validate_probability(
+                mode_value.get("threshold"),
+                f"modes.{mode_key}.threshold",
+            )
+
+        if model_type == "detection":
+            validate_probability(
+                mode_value.get("confidence_threshold"),
+                f"modes.{mode_key}.confidence_threshold",
+            )
+            validate_probability(
+                mode_value.get("iou_threshold"),
+                f"modes.{mode_key}.iou_threshold",
+            )

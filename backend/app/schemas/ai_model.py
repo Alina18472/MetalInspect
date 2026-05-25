@@ -1,3 +1,4 @@
+# schemas/ai_model.py
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -31,6 +32,8 @@ class AiModelSettingsUpdate(BaseModel):
     threshold: Optional[float] = None
     confidence_threshold: Optional[float] = None
     iou_threshold: Optional[float] = None
+
+    modes: Optional[dict[str, Any]] = None
 
     status: Optional[str] = None
     description: Optional[str] = None

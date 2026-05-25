@@ -5,3 +5,6 @@ from .inspection import Inspection
 from .defect import Defect
 from .image import Image
 from .ai_model import AiModel
+from .mes_event import MesEvent
+from .permission import Permission
+from .role_permission import RolePermission

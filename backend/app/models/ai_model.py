@@ -1,3 +1,4 @@
+# ai_model.py
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Text
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB

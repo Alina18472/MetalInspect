@@ -375,4 +375,6 @@ Metal_Inspect_0/
 ├── project.txt                         # Дополнительные заметки / описание проекта
 └── .gitignore                          # Исключения для Git
 
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+uvicorn app.main:app --host 127.0.0.1 --port 8001 --log-level debug

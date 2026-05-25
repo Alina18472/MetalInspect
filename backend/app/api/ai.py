@@ -1,3 +1,4 @@
+# ai.py
 from typing import Optional
 
 from fastapi import Query
@@ -93,19 +94,19 @@ def process_stream(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@router.post("/shift/start")
-def start_shift(
-    mode: Optional[str] = Query(default=None),
-    threshold: Optional[float] = Query(default=None),
-    delay_sec: float = Query(default=0.7),
-    current_user: User = Depends(require_permission("shift.control")),
-):
-    return shift_runtime_service.start_shift(
-        user_id=current_user.id,
-        mode=mode,
-        threshold=threshold,
-        delay_sec=delay_sec,
-    )
+# @router.post("/shift/start")
+# def start_shift(
+#     mode: Optional[str] = Query(default=None),
+#     threshold: Optional[float] = Query(default=None),
+#     delay_sec: float = Query(default=0.7),
+#     current_user: User = Depends(require_permission("shift.control")),
+# ):
+#     return shift_runtime_service.start_shift(
+#         user_id=current_user.id,
+#         mode=mode,
+#         threshold=threshold,
+#         delay_sec=delay_sec,
+#     )
 
 @router.get("/shift/status")
 def get_shift_status(
@@ -119,15 +120,15 @@ def stop_shift(
 ):
     return shift_runtime_service.stop_shift()
 
-@router.post("/camera/start")
-def start_camera(
-    delay_sec: float = 0.25,
-    current_user: User = Depends(require_permission("camera.control")),
-):
-    try:
-        return camera_runtime_service.start_camera(delay_sec=delay_sec)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.post("/camera/start")
+# def start_camera(
+#     delay_sec: float = 0.25,
+#     current_user: User = Depends(require_permission("camera.control")),
+# ):
+#     try:
+#         return camera_runtime_service.start_camera(delay_sec=delay_sec)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/camera/status")
@@ -141,3 +142,53 @@ def stop_camera(
     current_user: User = Depends(require_permission("camera.control")),
 ):
     return camera_runtime_service.stop_camera()
+
+# @router.post("/shift/start")
+# def start_shift(
+#     mode: Optional[str] = Query(default=None),
+#     threshold: Optional[float] = Query(default=None),
+#     delay_sec: float = Query(default=0.0, ge=0.0),
+#     current_user: User = Depends(require_permission("shift.control")),
+# ):
+#     return shift_runtime_service.start_shift(
+#         user_id=current_user.id,
+#         mode=mode,
+#         threshold=threshold,
+#         delay_sec=delay_sec,
+#     )
+
+
+# @router.post("/camera/start")
+# def start_camera(
+#     delay_sec: float = Query(default=1 / 15, gt=0.0),
+#     current_user: User = Depends(require_permission("camera.control")),
+# ):
+#     try:
+#         return camera_runtime_service.start_camera(delay_sec=delay_sec)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/shift/start")
+def start_shift(
+    mode: Optional[str] = Query(default=None),
+    threshold: Optional[float] = Query(default=None),
+    delay_sec: float = Query(default=0.0, ge=0.0),
+    current_user: User = Depends(require_permission("shift.control")),
+):
+    return shift_runtime_service.start_shift(
+        user_id=current_user.id,
+        mode=mode,
+        threshold=threshold,
+        delay_sec=delay_sec,
+    )
+
+
+@router.post("/camera/start")
+def start_camera(
+    delay_sec: float = Query(default=1 / 15, gt=0.0),
+    current_user: User = Depends(require_permission("camera.control")),
+):
+    try:
+        return camera_runtime_service.start_camera(delay_sec=delay_sec)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
