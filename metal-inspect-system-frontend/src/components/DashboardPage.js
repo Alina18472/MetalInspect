@@ -1,9 +1,9 @@
-
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "../styles/dashboard.css";
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
 import { useAuth } from "../context/AuthContext";
+
 const DEFAULT_CAMERA_FPS = 15;
 const CAMERA_FPS_STORAGE_KEY = "metal_inspect_camera_fps";
 const SHIFT_ANALYSIS_DELAY_SEC = 0;
@@ -87,6 +87,8 @@ const Dashboard = () => {
   const [cameraFpsInput, setCameraFpsInput] = useState(() =>
     String(getSavedCameraFps())
   );
+  const [cameraFpsSavedNotice, setCameraFpsSavedNotice] = useState("");
+  const cameraFpsNoticeTimerRef = useRef(null);
 
   const [cameraFrame, setCameraFrame] = useState(null);
   const [analysisFrame, setAnalysisFrame] = useState(null);
@@ -117,15 +119,22 @@ const Dashboard = () => {
     event: null,
     isSubmitting: false,
   });
-  const analysisDebugEnabled = Boolean(shiftStatus?.analysis_frame_events_enabled);
 
+  const [decisionConfirmModal, setDecisionConfirmModal] = useState({
+    isOpen: false,
+    type: null,
+    event: null,
+    isSubmitting: false,
+  });
 
   const [accessNotice, setAccessNotice] = useState(null);
   const accessNoticeTimerRef = useRef(null);
   const { user } = useAuth();
 
   const userName =
-    `${user?.last_name || ""} ${user?.first_name || ""} ${user?.patronymic || ""}`.trim() ||
+    `${user?.last_name || ""} ${user?.first_name || ""} ${
+      user?.patronymic || ""
+    }`.trim() ||
     user?.email ||
     "Пользователь";
 
@@ -182,17 +191,59 @@ const Dashboard = () => {
     if (box) setModalImageBox(box);
   }, []);
 
+  const mapJournalItems = useCallback((items = []) => {
+    return items.map((item) => ({
+      defectDbId: item.id,
+      inspectionId: item.inspection_id,
+      time: item.time ? item.time.replace("T", " ") : "",
+      id: item.ingot_id,
+      confidence: item.confidence || item.max_p_crack || 0,
+      status: item.status || "pending",
+      operator: item.operator || "Автоматически",
+      comment: item.comment || "Требуется проверка оператором",
+      defectType: item.defect_type || "crack",
+      maxPCrack: item.max_p_crack,
+      threshold: item.threshold,
+      mode: item.mode,
+      framesCount: item.frames_count,
+      verdict: item.verdict,
+      bestFrameUrl: resolveImageUrl(item.best_frame_url),
+      aiModelId: item.ai_model_id,
+      aiModelKey: item.ai_model_key,
+      aiModelName: item.ai_model_name,
+      aiModelType: item.ai_model_type,
+      aiModelArchitecture: item.ai_model_architecture,
+      sentToMesAt: item.sent_to_mes_at,
+      mesStatus: item.mes_status,
+      mesMessage: item.mes_message,
+      bbox: item.bbox || null,
+      detections: Array.isArray(item.detections) ? item.detections : [],
+      bboxCount:
+        item.bbox_count ??
+        (Array.isArray(item.detections) ? item.detections.length : 0),
+    }));
+  }, []);
+
+  const loadJournalData = useCallback(async () => {
+    try {
+      const journal = await api.getJournal();
+      setEventsData(mapJournalItems(journal.items || []).slice(0, 10));
+    } catch (e) {
+      console.warn("getJournal error:", e);
+      setEventsData([]);
+    }
+  }, [mapJournalItems]);
+
   const loadDashboardData = useCallback(async () => {
     if (loadingDashboardRef.current) return;
 
     loadingDashboardRef.current = true;
 
     try {
-      const [statusResult, cameraResult, journalResult, currentShiftStatsResult] =
+      const [statusResult, cameraResult, currentShiftStatsResult] =
         await Promise.allSettled([
           api.getShiftStatus(),
           api.getCameraStatus(),
-          api.getJournal(),
           api.getCurrentShiftStats(),
         ]);
 
@@ -218,53 +269,11 @@ const Dashboard = () => {
         setShiftStats(null);
       }
 
-      if (journalResult.status === "fulfilled") {
-        const journal = journalResult.value || {};
-
-        const mappedEvents = (journal.items || []).map((item) => ({
-          defectDbId: item.id,
-          inspectionId: item.inspection_id,
-          time: item.time ? item.time.replace("T", " ") : "",
-          id: item.ingot_id,
-          confidence: item.confidence || item.max_p_crack || 0,
-          status: item.status || "pending",
-          operator: item.operator || "Автоматически",
-          comment: item.comment || "Требуется проверка оператором",
-          defectType: item.defect_type || "crack",
-          maxPCrack: item.max_p_crack,
-          threshold: item.threshold,
-          mode: item.mode,
-          framesCount: item.frames_count,
-          verdict: item.verdict,
-          bestFrameUrl: resolveImageUrl(item.best_frame_url),
-          aiModelId: item.ai_model_id,
-          aiModelKey: item.ai_model_key,
-          aiModelName: item.ai_model_name,
-          aiModelType: item.ai_model_type,
-          aiModelArchitecture: item.ai_model_architecture,
-          sentToMesAt: item.sent_to_mes_at,
-          mesStatus: item.mes_status,
-          mesMessage: item.mes_message,
-          bbox: item.bbox || null,
-          detections: Array.isArray(item.detections) ? item.detections : [],
-          bboxCount:
-            item.bbox_count ??
-            (Array.isArray(item.detections) ? item.detections.length : 0),
-        }));
-
-        setEventsData(mappedEvents.slice(0, 10));
-      } else {
-        console.warn("getJournal error:", journalResult.reason);
-        setEventsData([]);
-      }
-
       if (
         statusResult.status === "rejected" ||
         cameraResult.status === "rejected"
       ) {
         setError("Не удалось загрузить состояние камеры или смены");
-      } else {
-        setError("");
       }
     } catch (e) {
       setError(e?.message || "Не удалось загрузить данные панели");
@@ -285,13 +294,14 @@ const Dashboard = () => {
   useEffect(() => {
     loadActiveModel();
     loadDashboardData();
+    loadJournalData();
 
     const interval = setInterval(() => {
       loadDashboardData();
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [loadActiveModel, loadDashboardData]);
+  }, [loadActiveModel, loadDashboardData, loadJournalData]);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -333,10 +343,14 @@ const Dashboard = () => {
           data.type === "shift_finished" ||
           data.type === "shift_error" ||
           data.type === "shift_stop_requested" ||
-          data.type === "ingot_result" ||
-          data.type === "defect_event"
+          data.type === "ingot_result"
         ) {
           loadDashboardData();
+        }
+
+        if (data.type === "defect_event") {
+          loadDashboardData();
+          loadJournalData();
         }
       } catch (e) {
         console.warn("Bad WebSocket message:", e);
@@ -346,7 +360,7 @@ const Dashboard = () => {
     return () => {
       ws.close();
     };
-  }, [loadDashboardData]);
+  }, [loadDashboardData, loadJournalData]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -363,6 +377,10 @@ const Dashboard = () => {
     return () => {
       if (accessNoticeTimerRef.current) {
         clearTimeout(accessNoticeTimerRef.current);
+      }
+
+      if (cameraFpsNoticeTimerRef.current) {
+        clearTimeout(cameraFpsNoticeTimerRef.current);
       }
     };
   }, []);
@@ -384,30 +402,40 @@ const Dashboard = () => {
       clearTimeout(timer2);
     };
   }, [isModalOpen, selectedEvent?.bestFrameUrl, updateModalImageBox]);
+
   const handleSaveCameraFps = () => {
     const fps = normalizeCameraFps(cameraFpsInput);
-  
+
     localStorage.setItem(CAMERA_FPS_STORAGE_KEY, String(fps));
     setCameraFpsInput(String(fps));
-  
+
     setError("");
+    setCameraFpsSavedNotice(`FPS сохранён: ${fps.toFixed(1)}.`);
+
+    if (cameraFpsNoticeTimerRef.current) {
+      clearTimeout(cameraFpsNoticeTimerRef.current);
+    }
+
+    cameraFpsNoticeTimerRef.current = setTimeout(() => {
+      setCameraFpsSavedNotice("");
+    }, 2800);
   };
 
   const handleStartCamera = async () => {
     setIsLoading(true);
     setError("");
-  
+
     try {
       const cameraFps = normalizeCameraFps(cameraFpsInput);
       const delaySec = fpsToDelaySec(cameraFps);
-  
+
       localStorage.setItem(CAMERA_FPS_STORAGE_KEY, String(cameraFps));
       setCameraFpsInput(String(cameraFps));
-  
+
       await api.startCamera({
         delaySec,
       });
-  
+
       await loadDashboardData();
     } catch (e) {
       if (
@@ -418,7 +446,7 @@ const Dashboard = () => {
       ) {
         return;
       }
-  
+
       setError(e?.message || "Не удалось запустить камеру");
     } finally {
       setIsLoading(false);
@@ -485,6 +513,20 @@ const Dashboard = () => {
 
     try {
       await api.stopShift();
+
+      setShiftStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              stop_requested: true,
+              accepting_frames: false,
+              shift_phase: "finishing",
+              message:
+                "Остановка смены: новые кадры не принимаются, очереди подготовки и анализа дорабатываются",
+            }
+          : prev
+      );
+
       await loadDashboardData();
     } catch (e) {
       if (
@@ -502,45 +544,100 @@ const Dashboard = () => {
     }
   };
 
-  const confirmEvent = async (event) => {
-    const comment = decisionComment.trim() || "Трещина подтверждена визуально";
+  const openDecisionConfirmModal = (type, event) => {
+    if (!event?.defectDbId) return;
 
-    try {
-      await api.confirmDefect(event.defectDbId, comment);
-      await loadDashboardData();
-      setIsModalOpen(false);
-    } catch (e) {
-      if (
-        handleAccessError(
-          e,
-          "Для подтверждения дефекта требуется право «Проверка дефектов»."
-        )
-      ) {
-        return;
-      }
+    setError("");
 
-      setError(e?.message || "Не удалось подтвердить дефект");
-    }
+    setDecisionConfirmModal({
+      isOpen: true,
+      type,
+      event,
+      isSubmitting: false,
+    });
   };
 
-  const rejectEvent = async (event) => {
-    const comment = decisionComment.trim() || "Ложное срабатывание";
+  const closeDecisionConfirmModal = () => {
+    if (decisionConfirmModal.isSubmitting) return;
+
+    setDecisionConfirmModal({
+      isOpen: false,
+      type: null,
+      event: null,
+      isSubmitting: false,
+    });
+  };
+
+  const confirmDecisionAction = async () => {
+    const event = decisionConfirmModal.event;
+    const type = decisionConfirmModal.type;
+
+    if (!event?.defectDbId || !type) {
+      closeDecisionConfirmModal();
+      return;
+    }
+
+    const isReject = type === "reject";
+    const comment =
+      decisionComment.trim() ||
+      (isReject ? "Ложное срабатывание" : "Трещина подтверждена визуально");
+
+    setDecisionConfirmModal((prev) => ({
+      ...prev,
+      isSubmitting: true,
+    }));
+
+    setIsLoading(true);
+    setError("");
 
     try {
-      await api.rejectDefect(event.defectDbId, comment);
+      if (isReject) {
+        await api.rejectDefect(event.defectDbId, comment);
+      } else {
+        await api.confirmDefect(event.defectDbId, comment);
+      }
+
       await loadDashboardData();
+      await loadJournalData();
+
+      setDecisionConfirmModal({
+        isOpen: false,
+        type: null,
+        event: null,
+        isSubmitting: false,
+      });
+
       setIsModalOpen(false);
     } catch (e) {
       if (
         handleAccessError(
           e,
-          "Для отклонения дефекта требуется право «Проверка дефектов»."
+          isReject
+            ? "Для отклонения дефекта требуется право «Проверка дефектов»."
+            : "Для подтверждения дефекта требуется право «Проверка дефектов»."
         )
       ) {
+        setDecisionConfirmModal((prev) => ({
+          ...prev,
+          isSubmitting: false,
+        }));
+
         return;
       }
 
-      setError(e?.message || "Не удалось отклонить дефект");
+      setError(
+        e?.message ||
+          (isReject
+            ? "Не удалось отклонить дефект"
+            : "Не удалось подтвердить дефект")
+      );
+
+      setDecisionConfirmModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+      }));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -597,6 +694,7 @@ const Dashboard = () => {
     try {
       await api.sendDefectToMes(event.defectDbId);
       await loadDashboardData();
+      await loadJournalData();
 
       setMesConfirmModal({
         isOpen: false,
@@ -686,8 +784,7 @@ const Dashboard = () => {
 
   const totalOk = shiftStats?.total_ok ?? shiftStatus?.total_ok ?? 0;
 
-  const defectRate =
-    shiftStats?.defect_rate ?? shiftStatus?.defect_rate ?? 0;
+  const defectRate = shiftStats?.defect_rate ?? shiftStatus?.defect_rate ?? 0;
 
   const currentShiftId = shiftStats?.shift_id ?? shiftStatus?.shift_id ?? null;
 
@@ -702,6 +799,10 @@ const Dashboard = () => {
   const analysisFrameName = analysisFrame?.frame_name || null;
   const analysisSourceIngotId = analysisFrame?.source_ingot_id || null;
 
+  const analysisDebugEnabled = Boolean(
+    shiftStatus?.analysis_frame_events_enabled
+  );
+
   const analysisMatchesCamera = Boolean(
     liveFrameName &&
       analysisFrameName &&
@@ -711,9 +812,8 @@ const Dashboard = () => {
         cameraSourceIngotId === analysisSourceIngotId)
   );
 
-  
   const visibleAnalysisFrame =
-  analysisDebugEnabled && analysisMatchesCamera ? analysisFrame : null;
+    analysisDebugEnabled && analysisMatchesCamera ? analysisFrame : null;
 
   const isSourceIngotId = (value) => {
     if (!value) return false;
@@ -906,6 +1006,41 @@ const Dashboard = () => {
   const cameraRunning = Boolean(cameraStatus?.running);
   const shiftRunning = Boolean(shiftStatus?.running);
 
+  const shiftPhase = shiftStatus?.shift_phase || "idle";
+
+  const shiftFinishing = Boolean(
+    shiftRunning &&
+      (shiftPhase === "finishing" ||
+        shiftStatus?.stop_requested ||
+        shiftStatus?.accepting_frames === false)
+  );
+
+  const shiftAcceptingFrames = Boolean(
+    shiftRunning &&
+      !shiftFinishing &&
+      shiftStatus?.accepting_frames !== false
+  );
+
+  const canStopCamera = Boolean(cameraRunning && !shiftAcceptingFrames);
+
+  const remainingQueueItems =
+    shiftStatus?.queue_size ??
+    shiftStatus?.analysis_queue_frames ??
+    shiftStatus?.analysis_queue_size ??
+    0;
+
+  const shiftStateText = shiftFinishing
+    ? "Анализируются остатки"
+    : shiftRunning
+    ? "Идёт обработка"
+    : "Не запущена";
+
+  const shiftControlButtonText = shiftFinishing
+    ? "Доработка очереди..."
+    : shiftRunning
+    ? "Остановить смену"
+    : "Начать смену";
+
   const liveImageUrl = cameraFrame?.frame_url
     ? resolveImageUrl(cameraFrame.frame_url)
     : cameraStatus?.current_frame_url
@@ -915,9 +1050,7 @@ const Dashboard = () => {
   const modelName = shiftStatus?.active_model_name || activeModel?.name || "—";
 
   const modelArchitecture =
-    shiftStatus?.active_model_architecture ||
-    activeModel?.architecture ||
-    "—";
+    shiftStatus?.active_model_architecture || activeModel?.architecture || "—";
 
   const modelType =
     analysisFrame?.model_type ||
@@ -942,7 +1075,9 @@ const Dashboard = () => {
 
   const normalizedLiveVerdict = String(liveVerdict || "").toUpperCase();
 
-  const liveStatusText = shiftRunning
+  const liveStatusText = shiftFinishing
+    ? "FINISHING"
+    : shiftRunning
     ? normalizedLiveVerdict === "CRACK" || normalizedLiveVerdict === "DEFECT"
       ? "DEFECT"
       : normalizedLiveVerdict === "OK"
@@ -957,6 +1092,8 @@ const Dashboard = () => {
       ? "danger"
       : liveStatusText === "OK"
       ? "success"
+      : liveStatusText === "FINISHING"
+      ? "warning"
       : cameraRunning
       ? "primary"
       : "muted";
@@ -1005,6 +1142,20 @@ const Dashboard = () => {
     return "confidence-text-low";
   };
 
+  const decisionConfirmIsReject = decisionConfirmModal.type === "reject";
+
+  const decisionConfirmTitle = decisionConfirmIsReject
+    ? "Отклонить срабатывание?"
+    : "Подтвердить дефект?";
+
+  const decisionConfirmText = decisionConfirmIsReject
+    ? "Событие будет помечено как ложное срабатывание. После отклонения его нельзя будет передать в MES."
+    : "Дефект будет подтверждён инженером. После подтверждения его можно будет передать в MES.";
+
+  const decisionConfirmButtonText = decisionConfirmIsReject
+    ? "Отклонить"
+    : "Подтвердить дефект";
+
   return (
     <div className="dashboard-page">
       <div className="dashboard-container">
@@ -1031,7 +1182,7 @@ const Dashboard = () => {
           <section className="operator-camera-card">
             <div className="operator-card-header">
               <div>
-                <h2>Live camera monitoring</h2>
+                <h2>Камера</h2>
                 <p>Имитация видеопотока из папки stream_images</p>
               </div>
 
@@ -1071,17 +1222,25 @@ const Dashboard = () => {
                 </div>
               )}
 
-              {renderBboxes(getLiveDetections())}
+              {analysisDebugEnabled && renderBboxes(getLiveDetections())}
 
               <div className="camera-top-overlay">
                 <span className={`status-badge ${liveStatusClass}`}>
                   {liveStatusText}
                 </span>
 
-                <span className="status-badge dark">BBOX: {liveBboxCount}</span>
+                {analysisDebugEnabled && (
+                  <span className="status-badge dark">
+                    BBOX: {liveBboxCount}
+                  </span>
+                )}
               </div>
 
-              <div className="camera-bottom-overlay">
+              <div
+                className={`camera-bottom-overlay ${
+                  analysisDebugEnabled ? "" : "compact"
+                }`}
+              >
                 <div>
                   <span className="overlay-label">Слиток</span>
                   <strong>{safeDisplayIngotId}</strong>
@@ -1097,10 +1256,12 @@ const Dashboard = () => {
                   <strong>{liveFrameName || "—"}</strong>
                 </div>
 
-                <div>
-                  <span className="overlay-label">p_crack</span>
-                  <strong>{formatNumber(livePCrack)}</strong>
-                </div>
+                {analysisDebugEnabled && (
+                  <div>
+                    <span className="overlay-label">p_crack</span>
+                    <strong>{formatNumber(livePCrack)}</strong>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1120,7 +1281,14 @@ const Dashboard = () => {
                     type="button"
                     className="control-btn secondary"
                     onClick={handleStopCamera}
-                    disabled={isLoading || shiftRunning}
+                    disabled={isLoading || !canStopCamera}
+                    title={
+                      shiftAcceptingFrames
+                        ? "Камеру нельзя остановить, пока смена принимает новые кадры. Сначала остановите смену."
+                        : shiftFinishing
+                        ? "Смена уже не принимает новые кадры. Камеру можно остановить."
+                        : ""
+                    }
                   >
                     Остановить камеру
                   </button>
@@ -1138,11 +1306,18 @@ const Dashboard = () => {
                 ) : (
                   <button
                     type="button"
-                    className="control-btn danger-btn"
+                    className={`control-btn ${
+                      shiftFinishing ? "warning-btn" : "danger-btn"
+                    }`}
                     onClick={handleStopShift}
-                    disabled={isLoading}
+                    disabled={isLoading || shiftFinishing}
+                    title={
+                      shiftFinishing
+                        ? "Система дорабатывает очередь анализа."
+                        : ""
+                    }
                   >
-                    Остановить смену
+                    {shiftControlButtonText}
                   </button>
                 )}
               </div>
@@ -1165,9 +1340,7 @@ const Dashboard = () => {
 
                 <div className="status-row">
                   <span>Смена</span>
-                  <strong>
-                    {shiftRunning ? "Идёт обработка" : "Не запущена"}
-                  </strong>
+                  <strong>{shiftStateText}</strong>
                 </div>
 
                 <div className="status-row">
@@ -1186,14 +1359,16 @@ const Dashboard = () => {
                 </div>
 
                 <div className="status-row">
-                  <span>Очередь анализа</span>
-                  <strong>{shiftStatus?.analysis_queue_size ?? "—"}</strong>
+                  <span>Очередь обработки</span>
+                  <strong>{shiftStatus?.queue_size ?? 0}</strong>
                 </div>
 
-                <div className="status-row">
-                  <span>Буфер кадров</span>
-                  <strong>{shiftStatus?.buffered_frames_count ?? "—"}</strong>
-                </div>
+                {shiftFinishing && (
+                  <div className="status-row shift-finishing-row">
+                    <span>Остаток очереди</span>
+                    <strong>{remainingQueueItems} кадров</strong>
+                  </div>
+                )}
 
                 <div className="status-row">
                   <span>Сообщение</span>
@@ -1201,6 +1376,7 @@ const Dashboard = () => {
                 </div>
               </div>
             </details>
+
             <details className="dashboard-section status-card" open>
               <summary className="side-card-title">
                 <span>Настройка камеры</span>
@@ -1223,42 +1399,24 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: "12px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: "6px",
-                    color: "#b0c4de",
-                    fontSize: "13px",
-                  }}
-                >
-                  FPS камеры
-                </label>
+              <div className="camera-settings-form">
+                <label className="camera-settings-label">FPS камеры</label>
 
                 <input
+                  className="camera-settings-input"
                   type="number"
                   step="0.1"
                   min="1"
                   max="60"
                   value={cameraFpsInput}
-                  onChange={(e) => setCameraFpsInput(e.target.value)}
-                  disabled={cameraRunning || shiftRunning || isLoading}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid rgba(60, 120, 180, 0.4)",
-                    background: "rgba(20, 30, 45, 0.9)",
-                    color: "#e0e0e0",
+                  onChange={(e) => {
+                    setCameraFpsInput(e.target.value);
+                    setCameraFpsSavedNotice("");
                   }}
+                  disabled={cameraRunning || shiftRunning || isLoading}
                 />
 
-                <div style={{ marginTop: "8px", color: "#8fb4d9", fontSize: "12px" }}>
-                  Задержка между кадрами рассчитывается автоматически:{" "}
-                  {fpsToDelaySec(cameraFpsInput).toFixed(4)} сек.
-                </div>
-
-                <div className="control-actions" style={{ marginTop: "12px" }}>
+                <div className="control-actions camera-settings-actions">
                   <button
                     type="button"
                     className="control-btn secondary"
@@ -1269,9 +1427,17 @@ const Dashboard = () => {
                   </button>
                 </div>
 
+                {cameraFpsSavedNotice && (
+                  <div className="camera-settings-success">
+                    {cameraFpsSavedNotice}
+                  </div>
+                )}
+
                 {(cameraRunning || shiftRunning) && (
-                  <div style={{ marginTop: "8px", color: "#b0c4de", fontSize: "12px" }}>
-                    FPS камеры можно менять только до запуска камеры.
+                  <div className="camera-settings-lock-note">
+                    FPS камеры можно менять только до запуска камеры и смены.
+                    {shiftFinishing &&
+                      " Сейчас смена дорабатывает очередь, поэтому FPS останется прежним до следующего запуска камеры."}
                   </div>
                 )}
               </div>
@@ -1475,7 +1641,9 @@ const Dashboard = () => {
                           <button
                             type="button"
                             className="control-btn"
-                            onClick={() => confirmEvent(selectedEvent)}
+                            onClick={() =>
+                              openDecisionConfirmModal("confirm", selectedEvent)
+                            }
                           >
                             Подтвердить дефект
                           </button>
@@ -1483,7 +1651,9 @@ const Dashboard = () => {
                           <button
                             type="button"
                             className="control-btn secondary"
-                            onClick={() => rejectEvent(selectedEvent)}
+                            onClick={() =>
+                              openDecisionConfirmModal("reject", selectedEvent)
+                            }
                           >
                             Отклонить
                           </button>
@@ -1617,9 +1787,7 @@ const Dashboard = () => {
 
                       <div className="detail-row">
                         <span>Архитектура</span>
-                        <strong>
-                          {selectedEvent.aiModelArchitecture || "—"}
-                        </strong>
+                        <strong>{selectedEvent.aiModelArchitecture || "—"}</strong>
                       </div>
                     </div>
                   </details>
@@ -1631,6 +1799,84 @@ const Dashboard = () => {
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {decisionConfirmModal.isOpen && (
+          <div
+            className="decision-confirm-overlay"
+            onClick={closeDecisionConfirmModal}
+          >
+            <div
+              className="decision-confirm-modal"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="decision-confirm-header">
+                <div>
+                  <h3>{decisionConfirmTitle}</h3>
+                  <p>{decisionConfirmText}</p>
+                </div>
+              </div>
+
+              <div className="decision-confirm-info">
+                <div className="decision-confirm-row">
+                  <span>ID слитка</span>
+                  <strong>{decisionConfirmModal.event?.id || "—"}</strong>
+                </div>
+
+                <div className="decision-confirm-row">
+                  <span>Модель</span>
+                  <strong>
+                    {decisionConfirmModal.event?.aiModelName ||
+                      decisionConfirmModal.event?.aiModelKey ||
+                      "—"}
+                  </strong>
+                </div>
+
+                <div className="decision-confirm-row">
+                  <span>Уверенность</span>
+                  <strong>
+                    {formatPercent(decisionConfirmModal.event?.confidence)}
+                  </strong>
+                </div>
+
+                <div className="decision-confirm-row">
+                  <span>Комментарий</span>
+                  <strong>
+                    {decisionComment.trim() ||
+                      (decisionConfirmIsReject
+                        ? "Ложное срабатывание"
+                        : "Трещина подтверждена визуально")}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="decision-confirm-actions">
+                <button
+                  type="button"
+                  className="decision-confirm-btn secondary"
+                  onClick={closeDecisionConfirmModal}
+                  disabled={decisionConfirmModal.isSubmitting}
+                >
+                  Отмена
+                </button>
+
+                <button
+                  type="button"
+                  className={`decision-confirm-btn ${
+                    decisionConfirmIsReject ? "danger" : "primary"
+                  }`}
+                  onClick={confirmDecisionAction}
+                  disabled={decisionConfirmModal.isSubmitting}
+                >
+                  {decisionConfirmModal.isSubmitting
+                    ? "Выполнение..."
+                    : decisionConfirmButtonText}
+                </button>
               </div>
             </div>
           </div>
@@ -1672,9 +1918,7 @@ const Dashboard = () => {
 
                 <div className="mes-confirm-row">
                   <span>Уверенность</span>
-                  <strong>
-                    {formatPercent(mesConfirmModal.event?.confidence)}
-                  </strong>
+                  <strong>{formatPercent(mesConfirmModal.event?.confidence)}</strong>
                 </div>
 
                 <div className="mes-confirm-row">

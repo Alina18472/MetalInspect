@@ -4,7 +4,7 @@
 from pathlib import Path
 from copy import deepcopy
 from typing import List
-
+from app.services.shift_runtime_service import shift_runtime_service
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -224,7 +224,20 @@ def restore_model_values(model: AiModel, old_values: dict):
     for field, value in old_values.items():
         setattr(model, field, value)
 
+def ensure_shift_not_running():
+    try:
+        status = shift_runtime_service.get_status()
+    except Exception:
+        return
 
+    if status.get("running"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Нельзя менять активную AI-модель во время запущенной смены. "
+                "Сначала остановите смену."
+            ),
+        )
 def schema_to_dict(data):
     if hasattr(data, "model_dump"):
         return data.model_dump(exclude_unset=True)
@@ -325,7 +338,7 @@ def get_active_ai_model(
 
     if not model:
         raise HTTPException(status_code=404, detail="Active AI model not found")
-
+    ensure_shift_not_running()
     return model
 
 
@@ -339,7 +352,8 @@ def activate_ai_model(
 
     if not model:
         raise HTTPException(status_code=404, detail="AI model not found")
-
+    if model.is_active:
+        ensure_shift_not_running()
     if model.status not in {"available", "experimental"}:
         raise HTTPException(
             status_code=400,
@@ -541,6 +555,9 @@ def update_ai_model_full(
 
     if not model:
         raise HTTPException(status_code=404, detail="AI model not found")
+    if model.is_active:
+        ensure_shift_not_running()
+
 
     old_values = snapshot_model_values(model)
     payload = schema_to_dict(data)
