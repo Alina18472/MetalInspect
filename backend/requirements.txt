@@ -13,3 +13,4 @@ minio
 ultralytics
 onnx
 onnxruntime
+openvino

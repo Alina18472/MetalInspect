@@ -252,28 +252,32 @@ Metal_Inspect_0/
 │   │
 │   ├── app/                            # Основной код backend-приложения
 │   │   ├── api/                        # API-роутеры FastAPI
+│   │   │   ├── __pycache__/
 │   │   │   ├── ai_models.py            # API для управления ИИ-моделями
-│   │   │   ├── ai.py                   # API запуска анализа изображений / ИИ-обработки
+│   │   │   ├── ai.py                   # API запуска камеры, смены и ИИ-анализа
 │   │   │   ├── auth.py                 # API авторизации и аутентификации
-│   │   │   ├── dashboard.py            # API для панели мониторинга
 │   │   │   ├── journal.py              # API журнала проверок и дефектов
+│   │   │   ├── mock_mes.py             # API / логика mock-MES
 │   │   │   ├── permissions.py          # API для работы с правами доступа
 │   │   │   ├── stats.py                # API статистики
 │   │   │   ├── users.py                # API управления пользователями
 │   │   │   └── ws.py                   # WebSocket API для обновлений в реальном времени
 │   │   │
 │   │   ├── core/                       # Базовая инфраструктура приложения
+│   │   │   ├── __pycache__/
 │   │   │   ├── config.py               # Конфигурация приложения
 │   │   │   ├── database.py             # Подключение к PostgreSQL
 │   │   │   ├── security.py             # Безопасность, пароли, JWT/авторизация
 │   │   │   └── ws_manager.py           # Менеджер WebSocket-подключений
 │   │   │
 │   │   ├── models/                     # SQLAlchemy-модели базы данных
+│   │   │   ├── __pycache__/
 │   │   │   ├── __init__.py             # Инициализация моделей
 │   │   │   ├── ai_model.py             # Модель записи об ИИ-модели
 │   │   │   ├── defect.py               # Модель дефекта
 │   │   │   ├── image.py                # Модель изображения / сохраненного кадра
 │   │   │   ├── inspection.py           # Модель проверки слитка
+│   │   │   ├── mes_event.py            # Модель события передачи в MES
 │   │   │   ├── permission.py           # Модель права доступа
 │   │   │   ├── role_permission.py      # Связь ролей и прав доступа
 │   │   │   ├── role.py                 # Модель роли пользователя
@@ -281,14 +285,18 @@ Metal_Inspect_0/
 │   │   │   └── user.py                 # Модель пользователя
 │   │   │
 │   │   ├── schemas/                    # Pydantic-схемы для валидации данных
+│   │   │   ├── __pycache__/
 │   │   │   ├── ai_model.py             # Схемы для ИИ-моделей
 │   │   │   ├── auth.py                 # Схемы авторизации
+│   │   │   ├── mes.py                  # Схемы для обмена с mock-MES
 │   │   │   └── user.py                 # Схемы пользователя
 │   │   │
 │   │   ├── services/                   # Сервисный слой backend
+│   │   │   ├── __pycache__/
 │   │   │   ├── ai_service.py           # Сервис загрузки модели и анализа кадров
-│   │   │   ├── camera_runtime_service.py # Логика эмуляции потока кадров
-│   │   │   ├── shift_runtime_service.py  # Runtime-логика текущей смены
+│   │   │   ├── camera_runtime_service.py # Runtime-логика эмуляции камеры
+│   │   │   ├── mes_service.py          # Сервис передачи данных в mock-MES
+│   │   │   ├── shift_runtime_service.py # Runtime-логика обработки текущей смены
 │   │   │   ├── shift_service.py        # Сервис работы со сменами
 │   │   │   └── storage_service.py      # Сервис сохранения файлов локально / в объектное хранилище
 │   │   │
@@ -300,14 +308,21 @@ Metal_Inspect_0/
 │   │
 │   ├── models_ml/                      # Файлы обученных ML-моделей
 │   │   ├── best_weighted.pt            # Основные веса ResNet18
+│   │   ├── best_yolo_304.pt            # Веса YOLO-модели
 │   │   ├── last_weighted.pt            # Последние сохраненные веса ResNet18
+│   │   ├── resnet18_crack_ok.onnx      # Экспортированная ONNX-версия ResNet18
+│   │   ├── resnet18_crack_ok.onnx.data # Дополнительные данные ONNX-модели
+│   │   ├── resnet18_crack_ok.onnx.metadata.json # Метаданные ONNX-модели
 │   │   └── yolo_crack_best.pt          # Веса YOLO-модели для детекции трещин
 │   │
 │   ├── scripts/                        # Вспомогательные скрипты backend
+│   │   ├── __pycache__/
 │   │   ├── create_admin.py             # Скрипт создания администратора
+│   │   ├── export_resnet18_to_onnx.py  # Скрипт экспорта ResNet18 в ONNX
 │   │   ├── register_yolo_model.py      # Скрипт регистрации YOLO-модели в БД
 │   │   ├── seed_ai_models.py           # Скрипт заполнения таблицы ИИ-моделей
-│   │   └── test_minio_upload.py        # Скрипт проверки загрузки файлов в MinIO / S3-хранилище
+│   │   ├── test_minio_upload.py        # Скрипт проверки загрузки файлов в MinIO / S3-хранилище
+│   │   └── test_onnx_resnet18.py       # Скрипт проверки ONNX-модели ResNet18
 │   │
 │   ├── stream_images/                  # Изображения для эмуляции видеопотока
 │   ├── alembic.ini                     # Конфигурация Alembic
@@ -316,12 +331,6 @@ Metal_Inspect_0/
 ├── metal-inspect-system-frontend/      # Frontend-часть системы на React
 │   ├── node_modules/                   # npm-зависимости, не включаются в репозиторий
 │   ├── public/                         # Публичные статические файлы React
-│   │   ├── index.html
-│   │   ├── logo192.png
-│   │   ├── logo512.png
-│   │   ├── manifest.json
-│   │   ├── robots.txt
-│   │   └── favicon.ico
 │   │
 │   ├── src/                            # Исходный код frontend-приложения
 │   │   ├── components/                 # React-компоненты и страницы
@@ -331,17 +340,13 @@ Metal_Inspect_0/
 │   │   │   ├── Auth.js                 # Страница авторизации
 │   │   │   ├── DashboardPage.js        # Главная панель мониторинга
 │   │   │   ├── JournalPage.js          # Журнал проверок и дефектов
-│   │   │   ├── Layout.js               # Общий макет приложения
-│   │   │   ├── ProtectedRoute.js       # Защита маршрутов для авторизованных пользователей
+│   │   │   ├── PermissionRoute.js      # Ограничение доступа по правам
 │   │   │   ├── RoleRoute.js            # Ограничение доступа по ролям
 │   │   │   ├── SettingsPage.js         # Страница настроек
 │   │   │   ├── StatisticPage.js        # Страница статистики
 │   │   │   └── TopNav.js               # Верхняя навигационная панель
 │   │   │
 │   │   ├── context/                    # React Context
-│   │   │   └── AuthContext.js          # Контекст авторизации и текущего пользователя
-│   │   │
-│   │   ├── other/                      # Дополнительные frontend-файлы
 │   │   │
 │   │   ├── services/                   # Сервисы для обращения к backend
 │   │   │   └── Api.js                  # Методы REST API и базовая настройка запросов
@@ -367,13 +372,13 @@ Metal_Inspect_0/
 │   │   └── setupTests.js               # Настройка тестового окружения
 │   │
 │   ├── .env                            # Переменные окружения frontend
-│   ├── package.json                    # npm-зависимости и команды запуска
 │   ├── package-lock.json               # Зафиксированные версии npm-пакетов
+│   ├── package.json                    # npm-зависимости и команды запуска
 │   └── README.md                       # Описание frontend-проекта
 │
+├── .gitignore                          # Исключения для Git
 ├── docker-compose.yml                  # Конфигурация Docker, например PostgreSQL / pgAdmin / MinIO
-├── project.txt                         # Дополнительные заметки / описание проекта
-└── .gitignore                          # Исключения для Git
+└── project.txt                         # Дополнительные заметки / описание проекта
 
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 

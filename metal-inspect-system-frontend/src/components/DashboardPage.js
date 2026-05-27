@@ -3,10 +3,30 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import "../styles/dashboard.css";
 import TopNav from "../components/TopNav";
 import { api, API_BASE_URL } from "../services/Api";
-
-const TARGET_CAMERA_FPS = 15;
-const CAMERA_DELAY_SEC = Number((1 / TARGET_CAMERA_FPS).toFixed(4));
+import { useAuth } from "../context/AuthContext";
+const DEFAULT_CAMERA_FPS = 15;
+const CAMERA_FPS_STORAGE_KEY = "metal_inspect_camera_fps";
 const SHIFT_ANALYSIS_DELAY_SEC = 0;
+
+const normalizeCameraFps = (value) => {
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) return DEFAULT_CAMERA_FPS;
+  if (numberValue < 1) return 1;
+  if (numberValue > 60) return 60;
+
+  return numberValue;
+};
+
+const getSavedCameraFps = () => {
+  const savedValue = localStorage.getItem(CAMERA_FPS_STORAGE_KEY);
+  return normalizeCameraFps(savedValue || DEFAULT_CAMERA_FPS);
+};
+
+const fpsToDelaySec = (fps) => {
+  const normalizedFps = normalizeCameraFps(fps);
+  return Number((1 / normalizedFps).toFixed(4));
+};
 
 const resolveImageUrl = (url) => {
   if (!url) return null;
@@ -64,6 +84,9 @@ const getRenderedImageBox = (img) => {
 const Dashboard = () => {
   const [shiftStatus, setShiftStatus] = useState(null);
   const [cameraStatus, setCameraStatus] = useState(null);
+  const [cameraFpsInput, setCameraFpsInput] = useState(() =>
+    String(getSavedCameraFps())
+  );
 
   const [cameraFrame, setCameraFrame] = useState(null);
   const [analysisFrame, setAnalysisFrame] = useState(null);
@@ -94,9 +117,22 @@ const Dashboard = () => {
     event: null,
     isSubmitting: false,
   });
+  const analysisDebugEnabled = Boolean(shiftStatus?.analysis_frame_events_enabled);
+
 
   const [accessNotice, setAccessNotice] = useState(null);
   const accessNoticeTimerRef = useRef(null);
+  const { user } = useAuth();
+
+  const userName =
+    `${user?.last_name || ""} ${user?.first_name || ""} ${user?.patronymic || ""}`.trim() ||
+    user?.email ||
+    "Пользователь";
+
+  const userRole =
+    user?.role_name ||
+    user?.role?.name ||
+    (Number(user?.role_id) === 1 ? "Администратор" : "Инженер");
 
   const showAccessNotice = useCallback((message) => {
     setAccessNotice({
@@ -348,16 +384,30 @@ const Dashboard = () => {
       clearTimeout(timer2);
     };
   }, [isModalOpen, selectedEvent?.bestFrameUrl, updateModalImageBox]);
+  const handleSaveCameraFps = () => {
+    const fps = normalizeCameraFps(cameraFpsInput);
+  
+    localStorage.setItem(CAMERA_FPS_STORAGE_KEY, String(fps));
+    setCameraFpsInput(String(fps));
+  
+    setError("");
+  };
 
   const handleStartCamera = async () => {
     setIsLoading(true);
     setError("");
-
+  
     try {
+      const cameraFps = normalizeCameraFps(cameraFpsInput);
+      const delaySec = fpsToDelaySec(cameraFps);
+  
+      localStorage.setItem(CAMERA_FPS_STORAGE_KEY, String(cameraFps));
+      setCameraFpsInput(String(cameraFps));
+  
       await api.startCamera({
-        delaySec: CAMERA_DELAY_SEC,
+        delaySec,
       });
-
+  
       await loadDashboardData();
     } catch (e) {
       if (
@@ -368,7 +418,7 @@ const Dashboard = () => {
       ) {
         return;
       }
-
+  
       setError(e?.message || "Не удалось запустить камеру");
     } finally {
       setIsLoading(false);
@@ -661,7 +711,9 @@ const Dashboard = () => {
         cameraSourceIngotId === analysisSourceIngotId)
   );
 
-  const visibleAnalysisFrame = analysisMatchesCamera ? analysisFrame : null;
+  
+  const visibleAnalysisFrame =
+  analysisDebugEnabled && analysisMatchesCamera ? analysisFrame : null;
 
   const isSourceIngotId = (value) => {
     if (!value) return false;
@@ -971,8 +1023,8 @@ const Dashboard = () => {
 
         <TopNav
           subtitle="Система распознавания трещин в слитках - Главный экран"
-          userName="Оператор системы"
-          userRole="Контроль качества"
+          userName={userName}
+          userRole={userRole}
         />
 
         <div className="operator-layout">
@@ -1147,6 +1199,81 @@ const Dashboard = () => {
                   <span>Сообщение</span>
                   <strong>{shiftStatus?.message || "Нет данных"}</strong>
                 </div>
+              </div>
+            </details>
+            <details className="dashboard-section status-card" open>
+              <summary className="side-card-title">
+                <span>Настройка камеры</span>
+              </summary>
+
+              <div className="status-grid">
+                <div className="status-row">
+                  <span>Заданный FPS</span>
+                  <strong>{normalizeCameraFps(cameraFpsInput).toFixed(1)}</strong>
+                </div>
+
+                <div className="status-row">
+                  <span>Фактический FPS</span>
+                  <strong>
+                    {cameraStatus?.camera_fps !== null &&
+                    cameraStatus?.camera_fps !== undefined
+                      ? Number(cameraStatus.camera_fps).toFixed(2)
+                      : "—"}
+                  </strong>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "12px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "6px",
+                    color: "#b0c4de",
+                    fontSize: "13px",
+                  }}
+                >
+                  FPS камеры
+                </label>
+
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="60"
+                  value={cameraFpsInput}
+                  onChange={(e) => setCameraFpsInput(e.target.value)}
+                  disabled={cameraRunning || shiftRunning || isLoading}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(60, 120, 180, 0.4)",
+                    background: "rgba(20, 30, 45, 0.9)",
+                    color: "#e0e0e0",
+                  }}
+                />
+
+                <div style={{ marginTop: "8px", color: "#8fb4d9", fontSize: "12px" }}>
+                  Задержка между кадрами рассчитывается автоматически:{" "}
+                  {fpsToDelaySec(cameraFpsInput).toFixed(4)} сек.
+                </div>
+
+                <div className="control-actions" style={{ marginTop: "12px" }}>
+                  <button
+                    type="button"
+                    className="control-btn secondary"
+                    onClick={handleSaveCameraFps}
+                    disabled={cameraRunning || shiftRunning || isLoading}
+                  >
+                    Сохранить FPS
+                  </button>
+                </div>
+
+                {(cameraRunning || shiftRunning) && (
+                  <div style={{ marginTop: "8px", color: "#b0c4de", fontSize: "12px" }}>
+                    FPS камеры можно менять только до запуска камеры.
+                  </div>
+                )}
               </div>
             </details>
 

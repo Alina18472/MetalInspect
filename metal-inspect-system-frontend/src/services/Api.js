@@ -220,11 +220,22 @@ export const api = {
     }),
 
   updateAiModelSettings: (modelId, payload) =>
-    request(`/ai/models/${modelId}/settings`, {
+  request(`/ai/models/${modelId}/settings`, {
+    method: "PUT",
+    body: payload,
+  }),
+
+  updateAiModel: (modelId, payload) =>
+    request(`/ai/models/${modelId}`, {
       method: "PUT",
       body: payload,
     }),
-  
+
+  deleteAiModel: (modelId) =>
+    request(`/ai/models/${modelId}`, {
+      method: "DELETE",
+    }),
+    
   createAiModel: (payload) =>
     request("/ai/models", {
       method: "POST",
